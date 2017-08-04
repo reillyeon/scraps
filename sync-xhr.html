@@ -1,0 +1,16 @@
+<html>
+<head>
+<title>Sync XHR Test</title>
+</head>
+<body>
+<script>
+let request = new XMLHttpRequest();
+request.open('GET', '', false);
+request.send();  // This line blocks until the request is complete.
+
+let pre = document.createElement('pre');
+pre.textContent = request.responseText;
+document.body.appendChild(pre);
+</script>
+</body>
+</html
