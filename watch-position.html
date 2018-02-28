@@ -9,21 +9,23 @@ let output = document.getElementById('output');
 
 function onSuccess(position) {
   console.log(position);
-  output.innerHtml = `
+  output.innerHTML = `
 <pre>
-  latitude: ${position.latitude}
-  longitude: ${position.longitude}
-  altitude: ${position.altitude}
-  accuracy: ${position.accuracy}
-  altitudeAccuracy: ${position.altitudeAccuracy}
-  heading: ${position.heading}
-  speed: ${position.speed}
+  latitude: ${position.coords.latitude}
+  longitude: ${position.coords.longitude}
+  altitude: ${position.coords.altitude}
+  accuracy: ${position.coords.accuracy}
+  altitudeAccuracy: ${position.coords.altitudeAccuracy}
+  heading: ${position.coords.heading}
+  speed: ${position.coords.speed}
+  timestamp: ${position.timestamp}
 </pre>
 `;
 }
 
 function onError(error) {
-  output.innerHtml = '<span style="color: red">Error: </span>${error}';
+output.innerHTML =
+    `<span style="color: red">Error: </span>${error.message} (${error.code})`;
 }
 
 options = {
