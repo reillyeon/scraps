@@ -1,0 +1,38 @@
+<html>
+<head>
+<title>geolocation.watchPosition demo</title>
+</head>
+<body>
+<div id="output"></div>
+<script>
+let output = document.getElementById('output');
+
+function onSuccess(position) {
+  console.log(position);
+  output.innerHtml = `
+<pre>
+  latitude: ${position.latitude}
+  longitude: ${position.longitude}
+  altitude: ${position.altitude}
+  accuracy: ${position.accuracy}
+  altitudeAccuracy: ${position.altitudeAccuracy}
+  heading: ${position.heading}
+  speed: ${position.speed}
+</pre>
+`;
+}
+
+function onError(error) {
+  output.innerHtml = '<span style="color: red">Error: </span>${error}';
+}
+
+options = {
+  enableHighAccuracy: true,
+  timeout: 5000,
+  maximumAge: 0
+}
+
+navigator.geolocation.watchPosition(onSuccess, onError, options);
+</script>
+</body>
+</html>
