@@ -1,0 +1,69 @@
+<html>
+<head>
+<title>DeviceOrientation Events Demo</title>
+</head>
+<body>
+<h3>deviceorientation</h3>
+<p id="deviceorientation"></p>
+<h3>deviceorientationabsolute</h3>
+<p id="deviceorientationabsolute"></p>
+<h3>devicemotion</h3>
+<p id="devicemotion"></p>
+<script>
+function onSuccess(position) {
+  console.log(position);
+  output.innerHTML = `
+<pre>
+  latitude: ${position.coords.latitude}
+  longitude: ${position.coords.longitude}
+  altitude: ${position.coords.altitude}
+  accuracy: ${position.coords.accuracy}
+  altitudeAccuracy: ${position.coords.altitudeAccuracy}
+  heading: ${position.coords.heading}
+  speed: ${position.coords.speed}
+  timestamp: ${position.timestamp}
+</pre>
+`;
+}
+
+window.addEventListener('deviceorientation', (event) => {
+  document.getElementById('deviceorientation').innerHTML = `
+<pre>
+  alpha: ${event.alpha}
+  beta: ${event.beta}
+  gamma: ${event.gamma}
+  absolute: ${event.absolute}
+</pre>
+`;
+});
+
+window.addEventListener('deviceorientationabsolute', (event) => {
+  document.getElementById('deviceorientationabsolute').innerHTML = `
+<pre>
+  alpha: ${event.alpha}
+  beta: ${event.beta}
+  gamma: ${event.gamma}
+  absolute: ${event.absolute}
+</pre>
+`;
+});
+
+window.addEventListener('devicemotion', (event) => {
+  document.getElementById('devicemotion').innerHTML = `
+<pre>
+  acceleration.x: ${event.acceleration.x}
+  acceleration.y: ${event.acceleration.y}
+  acceleration.z: ${event.acceleration.z}
+  accelerationIncludingGravity.x: ${event.accelerationIncludingGravity.x}
+  accelerationIncludingGravity.y: ${event.accelerationIncludingGravity.y}
+  accelerationIncludingGravity.z: ${event.accelerationIncludingGravity.z}
+  rotationRate.alpha: ${event.rotationRate.alpha}
+  rotationRate.beta: ${event.rotationRate.beta}
+  rotationRate.gamma: ${event.rotationRate.gamma}
+  interval: ${event.interval}
+</pre>
+`;
+});
+</script>
+</body>
+</html>
