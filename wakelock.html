@@ -1,0 +1,36 @@
+<html>
+<head>
+<title>Wake Lock Test</title>
+</head>
+<body>
+<p>Click a button below to acquire or release a wake lock.</p>
+<p><button id="screen">Screen</button> <span id="screen_status"></span></p>
+<p><button id="system">System</button> <span id="system_status"></span></p>
+<script>
+[ 'screen', 'system' ].forEach(type => {
+  const button = document.getElementById(type);
+  const label = document.getElementById(type + '_status');
+
+  let controller;
+
+  button.addEventListener('click', async () => {
+    if (controller) {
+      controller.abort();
+      return;
+    }
+
+    controller = new AbortController();
+    WakeLock.request(type, { signal: controller.signal }).catch(e => {
+      controller = undefined;
+      if (e.name == 'AbortError') {
+        label.textContent = 'Released';
+        return;
+      }
+      label.textContent = `${e.name}: ${e.message}`;
+    });
+    label.textContent = 'Acquired';
+  });
+});
+</script>
+</body>
+</html>
