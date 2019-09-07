@@ -10,7 +10,6 @@
 [ 'screen', 'system' ].forEach(type => {
   const button = document.getElementById(type);
   const label = document.getElementById(type + '_status');
-
   let controller;
 
   button.addEventListener('click', async () => {
@@ -20,15 +19,17 @@
     }
 
     controller = new AbortController();
-    WakeLock.request(type, { signal: controller.signal }).catch(e => {
-      controller = undefined;
+    try {
+      label.textContent = 'Acquired';
+      await WakeLock.request(type, { signal: controller.signal });
+    } catch (e) {
       if (e.name == 'AbortError') {
         label.textContent = 'Released';
-        return;
+      } else {
+        label.textContent = `${e.name}: ${e.message}`;
       }
-      label.textContent = `${e.name}: ${e.message}`;
-    });
-    label.textContent = 'Acquired';
+    }
+    controller = undefined;
   });
 });
 </script>
