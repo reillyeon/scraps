@@ -10,27 +10,55 @@
 [ 'screen', 'system' ].forEach(type => {
   const button = document.getElementById(type);
   const label = document.getElementById(type + '_status');
-  let controller;
 
-  button.addEventListener('click', async () => {
-    if (controller) {
-      controller.abort();
-      return;
-    }
+  if ('WakeLock' in window && 'request' in WakeLock) {
+    // API implemented in Chrome 78.
+    let controller;
 
-    controller = new AbortController();
-    try {
-      label.textContent = 'Acquired';
-      await WakeLock.request(type, { signal: controller.signal });
-    } catch (e) {
-      if (e.name == 'AbortError') {
-        label.textContent = 'Released';
-      } else {
+    button.addEventListener('click', async () => {
+      if (controller) {
+        controller.abort();
+        return;
+      }
+
+      controller = new AbortController();
+      try {
+        label.textContent = 'Acquired';
+        await WakeLock.request(type, { signal: controller.signal });
+      } catch (e) {
+        if (e.name == 'AbortError') {
+          label.textContent = 'Released';
+        } else {
+          label.textContent = `${e.name}: ${e.message}`;
+        }
+      }
+      controller = undefined;
+    });
+  } else if ('wakeLock' in navigator) {
+    // API implemented in Chrome 79.
+    let lock;
+
+    button.addEventListener('click', async () => {
+      if (lock) {
+        lock.release();
+        return;
+      }
+
+      try {
+        lock = await navigator.wakeLock.request(type);
+        label.textContent = 'Acquired';
+
+        lock.addEventListener('release', () => {
+          label.textContent = 'Released';
+          lock = null;
+        });
+      } catch (e) {
         label.textContent = `${e.name}: ${e.message}`;
       }
-    }
-    controller = undefined;
-  });
+    });
+  } else {
+    label.textContent = 'Not supported';
+  }
 });
 </script>
 </body>
