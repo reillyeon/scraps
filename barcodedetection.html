@@ -16,7 +16,7 @@ if (!('BarcodeDetector' in window)) {
       return;
     }
 
-    msg.textContent = "No barcode formats supported.";
+    msg.textContent = "Supported barcode formats:"
     document.body.appendChild(msg);
 
     const list = document.createElement('ul');
@@ -25,7 +25,7 @@ if (!('BarcodeDetector' in window)) {
       entry.textContent = format;
       list.appendChild(entry);
     }
-    document.body.appendChild(list);
+    msg.appendChild(list);
   }, (error) => {
     msg.textContent = `${error.name}: ${error.message}`;
     document.body.appendChild(msg); 
