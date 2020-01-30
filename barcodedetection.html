@@ -1,0 +1,36 @@
+<html>
+  <head>
+    <title>Barcode Detection Info</title>
+  </head>
+  <body>
+    <script>
+const msg = document.createElement('p');
+if (!('BarcodeDetector' in window)) {
+  msg.textContent = "Barcode detection not supported.";
+  document.body.appendChild(msg);
+} else {
+  BarcodeDetector.getSupportedFormats().then((formats) => {
+    if (formats.length == 0) {
+      msg.textContent = "No barcode formats supported.";
+      document.body.appendChild(msg);
+      return;
+    }
+
+    msg.textContent = "No barcode formats supported.";
+    document.body.appendChild(msg);
+
+    const list = document.createElement('ul');
+    for (const format of formats) {
+      const entry = document.createElement('li');
+      entry.textContent = format;
+      list.appendChild(entry);
+    }
+    document.body.appendChild(list);
+  }, (error) => {
+    msg.textContent = `${error.name}: ${error.message}`;
+    document.body.appendChild(msg); 
+  });
+}
+    </script>
+  </body>
+</html>
