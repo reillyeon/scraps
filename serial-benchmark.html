@@ -1,0 +1,144 @@
+<html>
+  <head>
+    <title>Serial API Benchmark</title>
+  </head>
+  <body>
+    <p>
+      Baud rate: <input type="text" inputmode="numeric" pattern="[0-9]*" id="baud-rate" value="9600" required><br>
+      Buffer size: <input type="text" inputmode="numeric" pattern="[0-9]*" id="buffer-size" value="255" required><br>
+      Chunk size: <input type="text" inputmode="numeric" pattern="[0-9]*" id="chunk-size" value="1024" required><br>
+      Average rate over <input type="text" inputmode="numeric" pattern="[0-9]*" id="rate-interval" value="1000" required> milliseconds.
+    </p>
+    <button id="button">Start</button>
+    <p>
+      Bytes sent: <span id="sent-count">0</span><br>
+      Bytes received: <span id="received-count">0</span><br>
+      Bandwidth delay product: <span id="bandwidth-delay-product">0</span><br>
+      Outgoing rate: <span id="send-rate">0</span> bits/second<br>
+      Incoming rate: <span id="receive-rate">0</span> bits/second<br>
+    </p>
+
+    <script>
+      const baudRateEl = document.getElementById('baud-rate');
+      const bufferSizeEl = document.getElementById('buffer-size');
+      const chunkSizeEl = document.getElementById('chunk-size');
+      const rateIntervalEl = document.getElementById('rate-interval');
+      const buttonEl = document.getElementById('button');
+      const sentCountEl = document.getElementById('sent-count');
+      const receivedCountEl = document.getElementById('received-count');
+      const bandwidthDelayProductEl = document.getElementById('bandwidth-delay-product');
+      const outgoingRateEl = document.getElementById('send-rate');
+      const incomingRateEl = document.getElementById('receive-rate');
+
+      let running = false;
+      let sentCount;
+      let receivedCount;
+
+      function incrementCounts(sentIncrement, receivedIncrement) {
+        sentCount += sentIncrement;
+        receivedCount += receivedIncrement;
+
+        const bandwidthDelayProduct = sentCount - receivedCount;
+
+        sentCountEl.textContent = sentCount;
+        receivedCountEl.textContent = receivedCount;
+        bandwidthDelayProductEl.textContent = bandwidthDelayProduct;
+      }
+
+      async function sendLoop(port) {
+        const chunkSize = parseInt(chunkSizeEl.value);
+
+        receivedCount = 0;
+
+        while (running && port.writable) {
+          const writer = port.writable.getWriter();
+          try {
+            while (running) {
+              const buffer = new Uint8Array(chunkSize);
+              await writer.write(buffer);
+              incrementCounts(buffer.byteLength, 0);
+            }
+          } catch (e) {
+            console.error(e);
+          } finally {
+            writer.releaseLock();
+          }
+        }
+      }
+
+      async function receiveLoop(port) {
+        sentCount = 0;
+
+        while (running && port.readable) {
+          const reader = port.readable.getReader();
+          try {
+            while (running) {
+              const { value, done } = await reader.read();
+              if (value) {
+                incrementCounts(0, value.byteLength);
+              }
+              if (done) {
+                break;
+              }
+            }
+          } catch (e) {
+            console.error(e);
+          } finally {
+            reader.releaseLock();
+          }
+        }
+      }
+
+      async function rateCalculationLoop() {
+        const intervalMs = parseInt(rateIntervalEl.value);
+
+        let previousSentCount = 0;
+        let previousReceivedCount = 0;
+
+        while (running) {
+          await new Promise(resolve => setTimeout(resolve, intervalMs));
+
+          const outgoingRate = (sentCount - previousSentCount) * 8 / (intervalMs / 1000);
+          const incomingRate = (receivedCount - previousReceivedCount) * 8 / (intervalMs / 1000);
+
+          previousSentCount = sentCount;
+          previousReceivedCount = receivedCount;
+
+          outgoingRateEl.textContent = outgoingRate;
+          incomingRateEl.textContent = incomingRate;
+        }
+      }
+
+      async function startBenchmark() {
+        const baudrate = parseInt(baudRateEl.value);
+        const buffersize = parseInt(bufferSizeEl.value);
+        const options = { baudrate, buffersize };
+
+        const port = await navigator.serial.requestPort();
+        await port.open(options);
+
+        buttonEl.textContent = "Stop";
+        running = true;
+
+        await Promise.all([sendLoop(port), receiveLoop(port), rateCalculationLoop()]);
+
+        buttonEl.textContent = "Start";
+        running = false;
+
+        await port.close();
+      }
+
+      async function stopBenchmark() {
+        running = false;
+      }
+
+      buttonEl.addEventListener('click', () => {
+        if (running) {
+          stopBenchmark();
+        } else {
+          startBenchmark();
+        }
+      });
+    </script>
+  </body>
+</html>
