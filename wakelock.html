@@ -2,64 +2,61 @@
 <head>
 <title>Wake Lock Test</title>
 <meta http-equiv="origin-trial" content="ArzyCxKqQgknW5KRfNQTfQ+lOBwrVlYwbcd2rm3llPLm7289KP974l5cB3GyNL+hNL2jdD7g5nnh6mOjfd9l8goAAABVeyJvcmlnaW4iOiJodHRwczovL3JlaWxseWVvbi5naXRodWIuaW86NDQzIiwiZmVhdHVyZSI6Ildha2VMb2NrIiwiZXhwaXJ5IjoxNTg2OTExODcyfQ==">
+<style>
+.time {
+  font-style: italic;
+}
+</style>
 </head>
 <body>
 <p>Click a button below to acquire or release a wake lock.</p>
 <p><button id="screen">Screen</button> <span id="screen_status"></span></p>
 <p><button id="system">System</button> <span id="system_status"></span></p>
+<p>Log:</p>
+<p id=log></p>
 <script>
+function log(message) {
+  const log = document.getElementById('log');
+  log.innerHTML += `<span class="time">${new Date().toUTCString()}</span>: ${message}<br>`;
+}
+
 [ 'screen', 'system' ].forEach(type => {
   const button = document.getElementById(type);
   const label = document.getElementById(type + '_status');
 
-  if ('WakeLock' in window && 'request' in WakeLock) {
-    // API implemented in Chrome 78.
-    let controller;
-
-    button.addEventListener('click', async () => {
-      if (controller) {
-        controller.abort();
-        return;
-      }
-
-      controller = new AbortController();
-      try {
-        label.textContent = 'Acquired';
-        await WakeLock.request(type, { signal: controller.signal });
-      } catch (e) {
-        if (e.name == 'AbortError') {
-          label.textContent = 'Released';
-        } else {
-          label.textContent = `${e.name}: ${e.message}`;
-        }
-      }
-      controller = undefined;
-    });
-  } else if ('wakeLock' in navigator) {
-    // API implemented in Chrome 79.
+  if ('wakeLock' in navigator) {
     let lock;
 
     button.addEventListener('click', async () => {
       if (lock) {
+        log(`Release "${type}" button pressed.`);
         lock.release();
         return;
       }
 
       try {
+        log(`Acquire "${type}" button pressed.`);
         lock = await navigator.wakeLock.request(type);
         label.textContent = 'Acquired';
+        log(`"${type}" lock acquired.`);
 
         lock.addEventListener('release', () => {
           label.textContent = 'Released';
+          log(`"${type}" lock released.`);
           lock = null;
         });
       } catch (e) {
         label.textContent = `${e.name}: ${e.message}`;
+        log(`Caught ${e.name} acquiring "${type}" lock: ${e.message}`);
       }
     });
   } else {
     label.textContent = 'Not supported';
   }
+});
+
+document.addEventListener('visibilitychange', () => {
+  log(`Document visibility changed to "${document.visibilityState}".`);
 });
 </script>
 </body>
