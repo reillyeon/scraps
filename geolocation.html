@@ -1,0 +1,100 @@
+<html>
+<head>
+<title>Geolocation demo</title>
+<style>
+  .error {
+    background-color: lightcoral;
+  }
+  .get-current-position {
+    background-color: aqua;
+  }
+  table {
+    border-collapse: collapse;
+  }
+  table td, table th {
+    border: 1px solid black;
+    padding: 3px;
+  }
+  table tr:first-child td, table tr:first-child th {
+    border-top: 0;
+  }
+  table tr td:first-child, table tr th:first-child {
+    border-left: 0;
+  }
+  table tr:last-child td, table tr:last-child th {
+    border-bottom: 0;
+  }
+  table tr td:last-child, table tr th:last-child {
+    border-right: 0;
+  }
+</style>
+</head>
+<body>
+<p>
+  <button id="watch">Start Watching Position</button> <button id="get">Get Current Position</button>
+</p>
+<table id="table">
+  <tr>
+    <th>Timestamp</th>
+    <th>Position</th>
+    <th>Altitude</th>
+    <th>Heading</th>
+    <th>Speed</th>
+  </tr>
+</table>
+<script>
+const table = document.getElementById('table');
+
+function logSuccess(position, fromGetCurrentPosition) {
+  const row = table.insertRow(1);
+  if (fromGetCurrentPosition) {
+    row.classList.add('get-current-position');
+  }
+  row.innerHTML = `
+    <td>${new Date(position.timestamp).toUTCString()}</td>
+    <td><a target="_blank" href="https://www.google.com/maps/search/${position.coords.latitude},${position.coords.longitude}">${position.coords.latitude}&deg;, ${position.coords.longitude}&deg</a> &plusmn;${position.coords.accuracy} m</td>
+    <td>${position.coords.altitude} m &plusmn${position.coords.altitudeAccuracy} m</td>
+    <td>${position.coords.heading}&deg;</td>
+    <td>${position.coords.speed} m/s</td>
+  `;
+}
+
+function logError(error) {
+  const row = table.insertRow(1);
+  row.classList.add('error');
+  row.innerHTML = `
+    <td>${new Date().toUTCString()}</td>
+    <td colspan="4">${error.message} (${error.code})</td>
+  `;
+}
+
+options = {
+  enableHighAccuracy: true,
+  timeout: 5000,
+  maximumAge: 0
+};
+
+const watchButton = document.getElementById('watch');
+let watchId = -1;
+watchButton.addEventListener('click', () => {
+  if (watchId == -1) {
+    watchId = navigator.geolocation.watchPosition((position) => {
+      logSuccess(position, false);
+    }, logError, options);
+    watchButton.textContent = 'Stop Watching Position';
+  } else {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = -1;
+    watchButton.textContent = 'Start Watching Position';
+  }
+});
+
+document.getElementById('get').addEventListener('click', () => {
+  navigator.geolocation.getCurrentPosition((position) => {
+    logSuccess(position, true);
+  }, logError, options)
+});
+
+</script>
+</body>
+</html>
