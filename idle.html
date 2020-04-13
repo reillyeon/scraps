@@ -1,0 +1,109 @@
+<html>
+<head>
+<title>Idle detection demo</title>
+<style>
+  .error {
+    background-color: lightcoral;
+  }
+  .info {
+    background-color: aqua;
+  }
+  table {
+    border-collapse: collapse;
+  }
+  table td, table th {
+    border: 1px solid black;
+    padding: 3px;
+  }
+  table tr:first-child td, table tr:first-child th {
+    border-top: 0;
+  }
+  table tr td:first-child, table tr th:first-child {
+    border-left: 0;
+  }
+  table tr:last-child td, table tr:last-child th {
+    border-bottom: 0;
+  }
+  table tr td:last-child, table tr th:last-child {
+    border-right: 0;
+  }
+  .state {
+    font-family: monospace;
+  }
+</style>
+</head>
+<body>
+<p>
+  <label for="threshold">Threshold (seconds):</label><input type="number" id="threshold" value="60"></input> <button id="start">Start</button>
+</p>
+<table id="table">
+  <tr>
+    <th>Timestamp</th>
+    <th>User</th>
+    <th>Screen</th>
+  </tr>
+</table>
+<script>
+const table = document.getElementById('table');
+
+function logMessage(message) {
+  const row = table.insertRow(1);
+  row.classList.add('info');
+  row.innerHTML = `
+    <td>${new Date().toUTCString()}</td>
+    <td colspan="2">${message}</td>
+  `;
+}
+
+function logState(state) {
+  const row = table.insertRow(1);
+  row.innerHTML = `
+    <td>${new Date().toUTCString()}</td>
+    <td class="state">${state.user}</td>
+    <td class="state">${state.screen}</td>
+  `;
+}
+
+function logError(error) {
+  const row = table.insertRow(1);
+  row.classList.add('error');
+  row.innerHTML = `
+    <td>${new Date().toUTCString()}</td>
+    <td colspan="2">${error.name}: ${error.message}</td>
+  `;
+}
+
+const thresholdInput = document.getElementById('threshold');
+const startButton = document.getElementById('start');
+let detector = null;
+startButton.addEventListener('click', async () => {
+  if (detector) {
+    try {
+      detector.stop();
+      detector = null;
+    } catch (error) {
+      logError(error);
+    }
+    logMessage('Idle detector stopped.');
+    startButton.textContent = 'Start';
+  } else {
+    try {
+      const options = {
+        threshold: parseInt(thresholdInput.value),
+      };
+      detector = new IdleDetector(options);
+      detector.addEventListener('change', () => {
+        logState(detector.state);
+      });
+      await detector.start();
+      logMessage('Idle detector started.');
+      startButton.textContent = 'Stop';
+    } catch (error) {
+      logError(error);
+    }
+  }
+});
+
+</script>
+</body>
+</html>
