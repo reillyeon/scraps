@@ -8,6 +8,9 @@
   .get-current-position {
     background-color: aqua;
   }
+  .permission {
+    background-color: bisque;
+  }
   table {
     border-collapse: collapse;
   }
@@ -32,9 +35,6 @@
 <body>
 <p>
   <button id="watch">Start Watching Position</button> <button id="get">Get Current Position</button>
-</p>
-<p>
-  Permission status: <span id="permission_status">unknown</span>
 </p>
 <table id="table">
   <tr>
@@ -71,6 +71,15 @@ function logError(error) {
   `;
 }
 
+function logPermission(status) {
+  const row = table.insertRow(1);
+  row.classList.add('permission');
+  row.innerHTML = `
+    <td>${new Date().toUTCString()}</td>
+    <td colspan="4">Permission status: ${status.state}</td>
+  `;
+}
+
 options = {
   enableHighAccuracy: true,
   timeout: 5000,
@@ -99,11 +108,8 @@ document.getElementById('get').addEventListener('click', () => {
 });
 
 navigator.permissions.query({name: 'geolocation'}).then((status) => {
-  const statusSpan = document.getElementById('permission_status');
-  statusSpan.textContent = status.state;
-  status.addEventListener('change', () => {
-    statusSpan.textContent = status.state;
-  });
+  logPermission(status);
+  status.addEventListener('change', () => logPermission(status));
 });
 
 </script>
