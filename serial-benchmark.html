@@ -13,7 +13,9 @@
       Chunk size: <input type="text" inputmode="numeric" pattern="[0-9]*" id="chunk-size" value="1024" required><br>
       Average rate over <input type="text" inputmode="numeric" pattern="[0-9]*" id="rate-interval" value="1000" required> milliseconds.
     </p>
-    <button id="button">Start</button>
+    <button id="connect">Connect</button>
+    <button id="writer" disabled>Start Writer</button>
+    <button id="reader" disabled>Start Reader</button>
     <p>
       Bytes sent: <span id="sent-count">0</span><br>
       Bytes received: <span id="received-count">0</span><br>
@@ -27,16 +29,27 @@
       const bufferSizeEl = document.getElementById('buffer-size');
       const chunkSizeEl = document.getElementById('chunk-size');
       const rateIntervalEl = document.getElementById('rate-interval');
-      const buttonEl = document.getElementById('button');
+      const connectButton = document.getElementById('connect');
+      const writerButton = document.getElementById('writer');
+      const readerButton = document.getElementById('reader');
       const sentCountEl = document.getElementById('sent-count');
       const receivedCountEl = document.getElementById('received-count');
       const bandwidthDelayProductEl = document.getElementById('bandwidth-delay-product');
       const outgoingRateEl = document.getElementById('send-rate');
       const incomingRateEl = document.getElementById('receive-rate');
 
-      let running = false;
-      let sentCount;
-      let receivedCount;
+      let port = null;
+      let writing = false;
+      let reading = false;
+
+      let chunkSize = parseInt(chunkSizeEl.value);
+
+      let rateIntervalMs = parseInt(rateIntervalEl.value);
+      let rateIntervalId = -1;
+      let previousSentCount = 0;
+      let previousReceivedCount = 0;
+      let sentCount = 0;
+      let receivedCount = 0;
 
       function incrementCounts(sentIncrement, receivedIncrement) {
         sentCount += sentIncrement;
@@ -49,15 +62,27 @@
         bandwidthDelayProductEl.textContent = bandwidthDelayProduct;
       }
 
-      async function sendLoop(port) {
-        const chunkSize = parseInt(chunkSizeEl.value);
+      function calculateRates() {
+        const outgoingRate = (sentCount - previousSentCount) * 8 / (rateIntervalMs / 1000);
+        const incomingRate = (receivedCount - previousReceivedCount) * 8 / (rateIntervalMs / 1000);
 
-        receivedCount = 0;
+        previousSentCount = sentCount;
+        previousReceivedCount = receivedCount;
 
-        while (running && port.writable) {
+        outgoingRateEl.textContent = outgoingRate;
+        incomingRateEl.textContent = incomingRate;
+      }
+
+      async function writerLoop() {
+        writerButton.textContent = 'Stop Writing';
+
+
+        writing = true;
+
+        while (writing && port && port.writable) {
           const writer = port.writable.getWriter();
           try {
-            while (running) {
+            while (writing) {
               const buffer = new Uint8Array(chunkSize);
               await writer.write(buffer);
               incrementCounts(buffer.byteLength, 0);
@@ -68,15 +93,22 @@
             writer.releaseLock();
           }
         }
+
+        writerButton.textContent = 'Start Writing';
+        if (port) {
+          writerButton.disabled = false;
+        }
       }
 
-      async function receiveLoop(port) {
-        sentCount = 0;
+      async function readerLoop() {
+        readerButton.textContent = 'Stop Reading';
 
-        while (running && port.readable) {
+        reading = true;
+
+        while (reading && port && port.readable) {
           const reader = port.readable.getReader();
           try {
-            while (running) {
+            while (reading) {
               const { value, done } = await reader.read();
               if (value) {
                 incrementCounts(0, value.byteLength);
@@ -91,58 +123,84 @@
             reader.releaseLock();
           }
         }
-      }
 
-      async function rateCalculationLoop() {
-        const intervalMs = parseInt(rateIntervalEl.value);
-
-        let previousSentCount = 0;
-        let previousReceivedCount = 0;
-
-        while (running) {
-          await new Promise(resolve => setTimeout(resolve, intervalMs));
-
-          const outgoingRate = (sentCount - previousSentCount) * 8 / (intervalMs / 1000);
-          const incomingRate = (receivedCount - previousReceivedCount) * 8 / (intervalMs / 1000);
-
-          previousSentCount = sentCount;
-          previousReceivedCount = receivedCount;
-
-          outgoingRateEl.textContent = outgoingRate;
-          incomingRateEl.textContent = incomingRate;
+        readerButton.textContent = 'Start Reading';
+        if (port) {
+          readerButton.disabled = false;
         }
       }
 
-      async function startBenchmark() {
+      async function connect() {
+        connectButton.disabled = true;
+
         const baudrate = parseInt(baudRateEl.value);
         const buffersize = parseInt(bufferSizeEl.value);
         const options = { baudrate, buffersize };
 
-        const port = await navigator.serial.requestPort();
+        port = await navigator.serial.requestPort();
         await port.open(options);
 
-        buttonEl.textContent = "Stop";
-        running = true;
+        connectButton.textContent = 'Disconnect';
+        connectButton.disabled = false;
+        writerButton.disabled = false;
+        readerButton.disabled = false;
 
-        await Promise.all([sendLoop(port), receiveLoop(port), rateCalculationLoop()]);
+        rateIntervalId = setInterval(calculateRates, rateIntervalMs);
+      }
 
-        buttonEl.textContent = "Start";
-        running = false;
+      async function disconnect() {
+        connectButton.disabled = true;
 
         await port.close();
+        port = null;
+
+        connectButton.textContent = 'Connect';
+        connectButton.disabled = false;
+        writerButton.disabled = false;
+        readerButton.disabled = false;
+
+        clearInterval(rateIntervalId);
+        rateIntervalId = -1;
       }
 
-      async function stopBenchmark() {
-        running = false;
-      }
-
-      buttonEl.addEventListener('click', () => {
-        if (running) {
-          stopBenchmark();
+      connectButton.addEventListener('click', () => {
+        if (port) {
+          disconnect();
         } else {
-          startBenchmark();
+          connect();
         }
       });
+
+      writerButton.addEventListener('click', () => {
+        if (writing) {
+          writing = false;
+          writerButton.disabled = true;
+        } else {
+          writerLoop();
+        }
+      });
+
+      readerButton.addEventListener('click', () => {
+        if (reading) {
+          reading = false;
+          readerButton.disabled = true;
+        } else {
+          readerLoop();
+        }
+      });
+
+      rateIntervalEl.addEventListener('change', () => {
+        rateIntervalMs = parseInt(rateIntervalEl.value);
+
+        if (rateIntervalId != -1) {
+          clearInterval(rateIntervalEl);
+          rateIntervalId = setInterval(calculateRates, rateIntervalMs);
+        }
+      });
+
+      chunkSizeEl.addEventListener('change', () => {
+        chunkSize = parseInt(chunkSizeEl.value);
+      })
     </script>
   </body>
 </html>
