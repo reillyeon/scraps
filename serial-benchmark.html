@@ -41,6 +41,7 @@
       let port = null;
       let writing = false;
       let reading = false;
+      let reader = null;
 
       let chunkSize = parseInt(chunkSizeEl.value);
 
@@ -106,7 +107,7 @@
         reading = true;
 
         while (reading && port && port.readable) {
-          const reader = port.readable.getReader();
+          reader = port.readable.getReader();
           try {
             while (reading) {
               const { value, done } = await reader.read();
@@ -120,7 +121,10 @@
           } catch (e) {
             console.error(e);
           } finally {
-            reader.releaseLock();
+            if (reader) {
+              reader.releaseLock();
+              reader = null;
+            }
           }
         }
 
@@ -183,6 +187,8 @@
       readerButton.addEventListener('click', () => {
         if (reading) {
           reading = false;
+          reader.cancel();
+          reader = null;
           readerButton.disabled = true;
         } else {
           readerLoop();
