@@ -13,9 +13,19 @@
       Chunk size: <input type="text" inputmode="numeric" pattern="[0-9]*" id="chunk-size" value="1024" required><br>
       Average rate over <input type="text" inputmode="numeric" pattern="[0-9]*" id="rate-interval" value="1000" required> milliseconds.
     </p>
-    <button id="connect">Connect</button>
-    <button id="writer" disabled>Start Writer</button>
-    <button id="reader" disabled>Start Reader</button>
+    <p>
+      <button id="connect">Connect</button>
+    </p>
+    <p>
+      Reader:
+      <button id="reader" disabled>Start</button>
+      <button id="read-chunk" disabled>Read Chunk</button>
+    </p>
+    <p>
+      Writer:
+      <button id="writer" disabled>Start</button>
+      <button id="send-chunk" disabled>Send Chunk</button>
+    </p>
     <p>
       Bytes sent: <span id="sent-count">0</span><br>
       Bytes received: <span id="received-count">0</span><br>
@@ -30,8 +40,10 @@
       const chunkSizeEl = document.getElementById('chunk-size');
       const rateIntervalEl = document.getElementById('rate-interval');
       const connectButton = document.getElementById('connect');
-      const writerButton = document.getElementById('writer');
       const readerButton = document.getElementById('reader');
+      const readChunkButton = document.getElementById('read-chunk');
+      const writerButton = document.getElementById('writer');
+      const sendChunkButton = document.getElementById('send-chunk');
       const sentCountEl = document.getElementById('sent-count');
       const receivedCountEl = document.getElementById('received-count');
       const bandwidthDelayProductEl = document.getElementById('bandwidth-delay-product');
@@ -75,8 +87,8 @@
       }
 
       async function writerLoop() {
-        writerButton.textContent = 'Stop Writing';
-
+        writerButton.textContent = 'Stop';
+        sendChunkButton.disabled = true;
 
         writing = true;
 
@@ -95,14 +107,16 @@
           }
         }
 
-        writerButton.textContent = 'Start Writing';
+        writerButton.textContent = 'Start';
         if (port) {
           writerButton.disabled = false;
+          sendChunkButton.disabled = false;
         }
       }
 
       async function readerLoop() {
-        readerButton.textContent = 'Stop Reading';
+        readerButton.textContent = 'Stop';
+        readChunkButton.disabled = true;
 
         reading = true;
 
@@ -128,9 +142,10 @@
           }
         }
 
-        readerButton.textContent = 'Start Reading';
+        readerButton.textContent = 'Start';
         if (port) {
           readerButton.disabled = false;
+          readChunkButton.disabled = false;
         }
       }
 
@@ -146,8 +161,10 @@
 
         connectButton.textContent = 'Disconnect';
         connectButton.disabled = false;
-        writerButton.disabled = false;
         readerButton.disabled = false;
+        readChunkButton.disabled = false;
+        writerButton.disabled = false;
+        sendChunkButton.disabled = false;
 
         rateIntervalId = setInterval(calculateRates, rateIntervalMs);
       }
@@ -160,8 +177,10 @@
 
         connectButton.textContent = 'Connect';
         connectButton.disabled = false;
-        writerButton.disabled = false;
-        readerButton.disabled = false;
+        readerButton.disabled = true;
+        readChunkButton.disabled = true;
+        writerButton.disabled = true;
+        sendChunkButton.disabled = true;
 
         clearInterval(rateIntervalId);
         rateIntervalId = -1;
@@ -175,23 +194,68 @@
         }
       });
 
-      writerButton.addEventListener('click', () => {
-        if (writing) {
-          writing = false;
-          writerButton.disabled = true;
-        } else {
-          writerLoop();
-        }
-      });
-
       readerButton.addEventListener('click', () => {
         if (reading) {
           reading = false;
           reader.cancel();
           reader = null;
           readerButton.disabled = true;
+          readChunkButton.disabled = true;
         } else {
           readerLoop();
+        }
+      });
+
+      readChunkButton.addEventListener('click', async () => {
+        readerButton.disabled = true;
+        readChunkButton.disabled = true;
+
+        const reader = port.readable.getReader();
+        try {
+          const { value, done } = await reader.read();
+          if (value) {
+            incrementCounts(0, value.byteLength);
+          }
+        } catch (e) {
+          console.error(e);
+        } finally {
+          reader.releaseLock();
+        }
+
+        if (port) {
+          readerButton.disabled = false;
+          readChunkButton.disabled = false;
+        }
+      });
+
+      writerButton.addEventListener('click', () => {
+        if (writing) {
+          writing = false;
+          writerButton.disabled = true;
+          sendChunkButton.disabled = true;
+        } else {
+          writerLoop();
+        }
+      });
+
+      sendChunkButton.addEventListener('click', async () => {
+        writerButton.disabled = true;
+        sendChunkButton.disabled = true;
+
+        const writer = port.writable.getWriter();
+        try {
+          const buffer = new Uint8Array(chunkSize);
+          await writer.write(buffer);
+          incrementCounts(buffer.byteLength, 0);
+        } catch (e) {
+          console.error(e);
+        } finally {
+          writer.releaseLock();
+        }
+
+        if (port) {
+          writerButton.disabled = false;
+          sendChunkButton.disabled = false;
         }
       });
 
