@@ -5,6 +5,11 @@
     <meta http-equiv="origin-trial" content="AgZG1Gv4/XN7F20yJ3R66RX/LQLBgj52O6B6hzvjp3lbWXDdxIhksq9Dl3C/PDqB1Gj4QlUXLFD3kOQqrpE4TAEAAABJeyJvcmlnaW4iOiJodHRwOi8vbG9jYWxob3N0OjgwODAiLCJmZWF0dXJlIjoiU2VyaWFsIiwiZXhwaXJ5IjoxNTk2NDg5NTgzfQ==">
     <!-- Token for https://reillyeon.github.io -->
     <meta http-equiv="origin-trial" content="ArLnvjUZdY7tBqBWUHZFvpMl6tSyo7l9qweResvvJzfZXAofncOo/M/5Vu8Aua0NJ8kKhIn2NMXQuYXRw1PN1A8AAABTeyJvcmlnaW4iOiJodHRwczovL3JlaWxseWVvbi5naXRodWIuaW86NDQzIiwiZmVhdHVyZSI6IlNlcmlhbCIsImV4cGlyeSI6MTU5NjQ4OTU2MX0=">
+    <style>
+      .time {
+        font-style: italic;
+      }
+    </style>
   </head>
   <body>
     <p>
@@ -20,6 +25,7 @@
       Reader:
       <button id="reader" disabled>Start</button>
       <button id="read-chunk" disabled>Read Chunk</button>
+      <button id="cancel-reader" disabled>Flush</button>
     </p>
     <p>
       Writer:
@@ -33,6 +39,8 @@
       Outgoing rate: <span id="send-rate">0</span> bits/second<br>
       Incoming rate: <span id="receive-rate">0</span> bits/second<br>
     </p>
+    <p>Log:</p>
+    <p id="log"></p>
 
     <script>
       const baudRateEl = document.getElementById('baud-rate');
@@ -42,6 +50,7 @@
       const connectButton = document.getElementById('connect');
       const readerButton = document.getElementById('reader');
       const readChunkButton = document.getElementById('read-chunk');
+      const cancelReaderButton = document.getElementById('cancel-reader');
       const writerButton = document.getElementById('writer');
       const sendChunkButton = document.getElementById('send-chunk');
       const sentCountEl = document.getElementById('sent-count');
@@ -49,11 +58,13 @@
       const bandwidthDelayProductEl = document.getElementById('bandwidth-delay-product');
       const outgoingRateEl = document.getElementById('send-rate');
       const incomingRateEl = document.getElementById('receive-rate');
+      const logEl = document.getElementById('log');
 
       let port = null;
       let writing = false;
       let reading = false;
       let reader = null;
+      let readerFlushed = null;
 
       let chunkSize = parseInt(chunkSizeEl.value);
 
@@ -84,6 +95,10 @@
 
         outgoingRateEl.textContent = outgoingRate;
         incomingRateEl.textContent = incomingRate;
+      }
+
+      function log(message) {
+        logEl.innerHTML += `<span class="time">${new Date().toUTCString()}</span>: ${message}<br>`;
       }
 
       async function writerLoop() {
@@ -121,7 +136,12 @@
         reading = true;
 
         while (reading && port && port.readable) {
-          reader = port.readable.getReader();
+          if (reader === null) {
+            reader = port.readable.getReader();
+            log('Reader created.');
+            cancelReaderButton.disabled = false;
+          }
+
           try {
             while (reading) {
               const { value, done } = await reader.read();
@@ -129,16 +149,19 @@
                 incrementCounts(0, value.byteLength);
               }
               if (done) {
+                log('Reader done.');
+                if (readerFlushed) {
+                  // Avoid a tight loop while reader.cancel() completes. 
+                  await readerFlushed;
+                }
                 break;
               }
             }
           } catch (e) {
-            console.error(e);
-          } finally {
-            if (reader) {
-              reader.releaseLock();
-              reader = null;
-            }
+            log(`Read error: ${e.name}, ${e.message}`);
+            reader.releaseLock();
+            reader = null;
+            cancelReaderButton.disabled = true;
           }
         }
 
@@ -159,6 +182,8 @@
         port = await navigator.serial.requestPort();
         await port.open(options);
 
+        log('Port opened.');
+
         connectButton.textContent = 'Disconnect';
         connectButton.disabled = false;
         readerButton.disabled = false;
@@ -172,7 +197,15 @@
       async function disconnect() {
         connectButton.disabled = true;
 
+        cancelReaderButton.disabled = true;
+        if (reader) {
+          reader.releaseLock();
+          reader = null;
+        }
+
+        log('Closing port...');
         await port.close();
+        log('Port closed.');
         port = null;
 
         connectButton.textContent = 'Connect';
@@ -210,22 +243,41 @@
         readerButton.disabled = true;
         readChunkButton.disabled = true;
 
-        const reader = port.readable.getReader();
+        if (reader === null) {
+          reader = port.readable.getReader();
+          log('Reader created.');
+          cancelReaderButton.disabled = false;
+        }
+
         try {
           const { value, done } = await reader.read();
           if (value) {
             incrementCounts(0, value.byteLength);
           }
         } catch (e) {
-          console.error(e);
-        } finally {
+          log(`Read error: ${e.name}, ${e.message}`);
           reader.releaseLock();
+          reader = null;
+          cancelReaderButton.disabled = true;
         }
 
         if (port) {
           readerButton.disabled = false;
           readChunkButton.disabled = false;
         }
+      });
+
+      cancelReaderButton.addEventListener('click', async () => {
+        cancelReaderButton.disabled = true;
+
+        log('Flushing reader...');
+        readerFlushed = reader.cancel();
+        await readerFlushed;
+        readerFlushed = null;
+        log('Reader flushed.');
+        reader = null;
+
+        cancelReaderButton.disabled = false;
       });
 
       writerButton.addEventListener('click', () => {
