@@ -175,9 +175,16 @@
       async function connect() {
         connectButton.disabled = true;
 
-        const baudrate = parseInt(baudRateEl.value);
-        const buffersize = parseInt(bufferSizeEl.value);
-        const options = { baudrate, buffersize };
+        const baudRate = parseInt(baudRateEl.value);
+        const bufferSize = parseInt(bufferSizeEl.value);
+        const options = {
+          baudRate,
+          bufferSize,
+
+          // Prior to Chrome 86 these names were used.
+          baudrate: baudRate,
+          buffersize: bufferSize,
+        };
 
         port = await navigator.serial.requestPort();
         await port.open(options);
