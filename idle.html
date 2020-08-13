@@ -116,7 +116,7 @@ permissionButton.addEventListener('click', async () => {
     return;
   }
 
-  const state = await navigator.permissions.request({name: 'idle-detection'}).state;
+  const state = (await navigator.permissions.request({name: 'idle-detection'})).state;
   logMessage(`Permission result: ${state}`);
 });
 
