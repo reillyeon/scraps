@@ -35,7 +35,10 @@
 </head>
 <body>
 <p>
-  <label for="threshold">Threshold (seconds):</label><input type="number" id="threshold" value="60"></input> <button id="start">Start</button>
+  <label for="threshold">Threshold (seconds):</label>
+  <input type="number" id="threshold" value="60"></input>
+  <button id="start">Start</button>
+  <button id="requestPermission">Request Permission</button>
 </p>
 <table id="table">
   <tr>
@@ -104,6 +107,28 @@ startButton.addEventListener('click', async () => {
     }
   }
 });
+
+const permissionButton = document.getElementById('requestPermission');
+permissionButton.addEventListener('click', async () => {
+  if ('requestPermission' in IdleDetector) {
+    const state = await IdleDetector.requestPermission();
+    logMessage(`Permission result: ${state}`);
+    return;
+  }
+
+  const state = await navigator.permissions.request({name: 'idle-detection'}).state;
+  logMessage(`Permission result: ${state}`);
+});
+
+async function main() {
+  const status = await navigator.permissions.query({name: 'idle-detection'});
+  logMessage(`Permission status: ${status.state}`);
+  status.addEventListener('change', () => {
+    logMessage(`Permission change: ${status.state}`);
+  });
+}
+
+main();
 
 </script>
 </body>
