@@ -4,6 +4,10 @@
 <meta http-equiv="origin-trial" content="AkmT96Xlg1ugU/uD2EJDcZIDxsCEQRZwDqVqBmG++8x8q5BOsm1JQ7SQ7b5ZZVbLkFd5Ff79JwGI2QX7vsYmxw8AAABaeyJvcmlnaW4iOiJodHRwczovL3JlaWxseWVvbi5naXRodWIuaW86NDQzIiwiZmVhdHVyZSI6IklkbGVEZXRlY3Rpb24iLCJleHBpcnkiOjE2MDI2Mzg3MzB9">
 <title>Idle detection demo</title>
 <style>
+  #notSupported {
+    border: 1px solid black;
+    padding: 5px;
+  }
   .error {
     background-color: lightcoral;
   }
@@ -35,6 +39,12 @@
 </style>
 </head>
 <body>
+<p id="notSupported" class="error">
+  The Idle Detection API appears not to be supported in your browser. Please
+  ensure that you are running a recent version of Chrome and have enabled
+  <code>chrome://flags/#enable-experimental-web-platform-features</code> or a
+  similar option in other Chromium-based browsers.
+</p>
 <p>
   <label for="threshold">Threshold (seconds):</label>
   <input type="number" id="threshold" value="60"></input>
@@ -49,6 +59,11 @@
   </tr>
 </table>
 <script>
+if ('IdleDetector' in window) {
+  const warning = document.getElementById('notSupported');
+  warning.remove();
+}
+
 const table = document.getElementById('table');
 
 function logMessage(message) {
