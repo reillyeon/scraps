@@ -120,6 +120,7 @@ startButton.addEventListener('click', async () => {
       startButton.textContent = 'Stop';
     } catch (error) {
       logError(error);
+      detector = null;
     }
   }
 });
