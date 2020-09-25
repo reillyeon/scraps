@@ -47,7 +47,7 @@
 </p>
 <p>
   <label for="threshold">Threshold (seconds):</label>
-  <input type="number" id="threshold" value="60"></input>
+  <input type="number" id="threshold" value="60000"></input>
   <button id="start">Start</button>
   <button id="requestPermission">Request Permission</button>
 </p>
@@ -79,8 +79,8 @@ function logState(state) {
   const row = table.insertRow(1);
   row.innerHTML = `
     <td>${new Date().toUTCString()}</td>
-    <td class="state">${state.user}</td>
-    <td class="state">${state.screen}</td>
+    <td class="state">${state.userState}</td>
+    <td class="state">${state.screenState}</td>
   `;
 }
 
@@ -96,10 +96,12 @@ function logError(error) {
 const thresholdInput = document.getElementById('threshold');
 const startButton = document.getElementById('start');
 let detector = null;
+let controller = null;
 startButton.addEventListener('click', async () => {
   if (detector) {
     try {
-      detector.stop();
+      controller.abort();
+      controller = null;
       detector = null;
     } catch (error) {
       logError(error);
@@ -108,18 +110,21 @@ startButton.addEventListener('click', async () => {
     startButton.textContent = 'Start';
   } else {
     try {
+      controller = new AbortController();
       const options = {
         threshold: parseInt(thresholdInput.value),
+        signal: controller.signal,
       };
-      detector = new IdleDetector(options);
+      detector = new IdleDetector();
       detector.addEventListener('change', () => {
-        logState(detector.state);
+        logState(detector);
       });
-      await detector.start();
+      await detector.start(options);
       logMessage('Idle detector started.');
       startButton.textContent = 'Stop';
     } catch (error) {
       logError(error);
+      controller = null;
       detector = null;
     }
   }
@@ -127,14 +132,12 @@ startButton.addEventListener('click', async () => {
 
 const permissionButton = document.getElementById('requestPermission');
 permissionButton.addEventListener('click', async () => {
-  if ('requestPermission' in IdleDetector) {
+  try {
     const state = await IdleDetector.requestPermission();
     logMessage(`Permission result: ${state}`);
-    return;
+  } catch (error) {
+    logError(error);
   }
-
-  const state = (await navigator.permissions.request({name: 'idle-detection'})).state;
-  logMessage(`Permission result: ${state}`);
 });
 
 async function main() {
