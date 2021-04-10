@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Lighthouse v2</title>
+<style>
+    table, th, td {
+        border: 1px solid black;
+    }
+</style>
+</head>
+<body>
+<table id="table">
+<tr><th>Name</th><th>Status</th><th>State</th></tr>
+</table>
+<p>
+    <button id="add">Add Lighthouse</button>
+</p>
+<script>
+const POWER_SERVICE = '00001523-1212-efde-1523-785feabcd124';
+const POWER_CHARACTERISTIC = '00001525-1212-efde-1523-785feabcd124';
+
+const addButton = document.getElementById('add');
+const table = document.getElementById('table');
+
+async function addDevice(device, watchAdvertisements) {
+    const row = document.createElement('tr');
+    const name = document.createElement('td');
+    name.textContent = device.name;
+    row.appendChild(name);
+    const status = document.createElement('td');
+    row.appendChild(status);
+    const state = document.createElement('td');
+    row.appendChild(state);
+    const buttonHolder = document.createElement('td');
+    const button = document.createElement('button');
+    button.textContent = 'Power on';
+    button.disabled = true;
+    buttonHolder.appendChild(button);
+    row.appendChild(buttonHolder);
+    table.appendChild(row);
+
+    let characteristic = null;
+
+    function onValueChanged() {
+        const value = characteristic.value.getUint8(0);
+        switch (value) {
+            case 0x00:
+                state.textContent = 'Sleeping';
+                button.disabled = false;
+                button.textContent = 'Power on';
+                break;
+            case 0x01:
+            case 0x08:
+            case 0x09:
+                state.textContent = 'Booting';
+                button.disabled = true;
+                break;
+            case 0x0B:
+                state.textContent = 'On';
+                button.disabled = false;
+                button.textContent = 'Power off';
+                break;
+            default:
+                state.textContent = `Unknown state: ${value}`;
+                button.disabled = true;
+                break;
+        }
+    }
+
+    async function setPowerState(state) {
+        try {
+            status.textContent = 'Sending command...';
+            await characteristic.writeValue(new Uint8Array([state]));
+            status.textContent = 'Command sent';
+        } catch (e) {
+            status.textContent = e;
+        }
+    }
+
+    button.addEventListener('click', () => {
+        try {
+            if (button.textContent == 'Power on') {
+                setPowerState(1);
+            }
+            if (button.textContent == 'Power off') {
+                setPowerState(0);
+            }
+        } catch (e) {
+            status.textContent = e;
+        }
+    });
+
+    async function connect() {
+        try {
+            status.textContent = 'Connecting...';
+            const server = await device.gatt.connect();
+            status.textContent = 'Getting power service...';
+            const service = await server.getPrimaryService(POWER_SERVICE);
+            status.textContent = 'Getting power characteristic...';
+            characteristic = await service.getCharacteristic(POWER_CHARACTERISTIC);
+            characteristic.addEventListener('characteristicvaluechanged', () => {
+                onValueChanged(characteristic.value);
+            });
+
+            status.textContent = 'Reading power status...';
+            await characteristic.readValue();
+            status.textContent = 'Subscribing to notifications...';
+            await characteristic.startNotifications();
+            status.textContent = 'Connected';
+        } catch (e) {
+            status.textContent = e;
+        }
+    }
+
+    if (watchAdvertisements) {
+        try {
+            status.textContent = 'Scanning...';
+            const controller = new AbortController();
+            device.addEventListener('advertisementreceived', () => {
+                controller.abort();
+                connect();
+            });
+            await device.watchAdvertisements({signal: controller.signal});
+        } catch (e) {
+            status.textContent = e;
+        }
+    } else {
+        connect();
+    }
+}
+
+addButton.addEventListener('click', async () => {
+    const device = await navigator.bluetooth.requestDevice({
+        filters: [{ namePrefix: "LHB-" }],
+        optionalServices: [POWER_SERVICE],
+    });
+
+    addDevice(device, false);
+});
+
+if (navigator.bluetooth.getDevices) {
+    navigator.bluetooth.getDevices().then((devices) => {
+        for (const device of devices) {
+            addDevice(device, true);
+        }
+    });
+}
+</script>
+</body>
+</html>
