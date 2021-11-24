@@ -1,0 +1,113 @@
+<html>
+<head>
+    <title>Printer Tool</title>
+</head>
+<body>
+<p>
+    <button id="print">Print</button>
+    <span id="status">No printer detected.</span>
+</p>
+<p>
+    <textarea id="data" cols="80", rows="24"></textarea>
+</p>
+<p>
+    Supported ASCII escape codes:
+    <ul>
+        <li>&lt;HT></li>
+        <li>&lt;LF></li>
+        <li>&lt;FF></li>
+        <li>&lt;CR></li>
+        <li>&lt;DLE></li>
+        <li>&lt;CAN></li>
+        <li>&lt;ESC></li>
+        <li>&lt;FS></li>
+        <li>&lt;GS></li>
+    </ul>
+    These strings are replaced with their equivalent ASCII codes before the data is sent to the printer.
+</p>
+<script>
+let status = document.getElementById('status');
+let device;
+
+navigator.usb.getDevices().then((devices) => {
+    if (devices.length > 0) {
+        device = devices[0];
+        status.textContent = 'Printer ready.';
+    }
+
+    if (devices.length > 1) {
+        status.textContent = 'More than one printer detected, using the first one.';
+    }
+});
+
+navigator.usb.addEventListener('connect', (e) => {
+    if (device) {
+        status.textContent = 'More than one printer detected, using the first one.';
+    } else {
+        device = e.device;
+        status.textContent = 'Printer ready.';
+    }
+});
+
+navigator.usb.addEventListener('disconnect', (e) => {
+    if (device == e.device) {
+        device = null;
+        status.textContent = 'Printer disconnected.';
+    }
+});
+
+document.getElementById('print').addEventListener('click', async () => {
+    if (!device) {
+        try {
+            device = await navigator.usb.requestDevice({ filters: [
+                { vendorId: 0x04b8 },  // Epson
+                { vendorId: 0x0a5f },  // Zebra
+            ]});
+            status.textContent = 'Printer ready.';
+        } catch (e) {
+            status.textContent = 'No device selected.';
+            return;
+        }
+    }
+
+    await device.open();
+
+    try {
+        await device.selectConfiguration(1);
+        await device.claimInterface(0);
+
+        let outEndpoint;
+        for (let endpoint of device.configuration.interfaces[0].alternate.endpoints) {
+            if (endpoint.direction == 'out') {
+                outEndpoint = endpoint;
+                break;
+            }
+        }
+
+        if (!outEndpoint) {
+            status.textContent = 'No OUT endpoint found.';
+            return;
+        }
+
+        const data = document.getElementById('data').value
+            .replaceAll('<HT>', '\x09')
+            .replaceAll('<LF>', '\x0A')
+            .replaceAll('<FF>', '\x0C')
+            .replaceAll('<CR>', '\x0D')
+            .replaceAll('<DLE>', '\x10')
+            .replaceAll('<CAN>', '\x18')
+            .replaceAll('<ESC>', '\x1B')
+            .replaceAll('<FS>', '\x1C')
+            .replaceAll('<GS>', '\x1D');
+
+        const buffer = (new TextEncoder()).encode(data);
+        await device.transferOut(outEndpoint.endpointNumber, buffer);
+    } catch (e) {
+        status.textContent = `${e.name}: ${e.message}`;
+    } finally {
+        await device.close();
+    }
+});
+</script>
+</body>
+</html>
