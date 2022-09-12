@@ -1,6 +1,10 @@
 <html>
 <head>
 <title>CO&#8322; Meter</title>
+<meta charset="UTF-8">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@^3"></script>
+<script src="https://cdn.jsdelivr.net/npm/moment@^2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@^1"></script>
 <style>
     table {
         border-collapse: collapse;
@@ -44,6 +48,9 @@
     <input type="radio" name="units" id="fahrenheit">
     <label for="fahrenheit">Fahrenheit</label>
 </p>
+<div>
+    <canvas id="chart"></canvas>
+</div>
 <table id="table">
     <tr>
         <th>Timestamp</th>
@@ -57,6 +64,49 @@ const connectButton = document.getElementById('connect');
 connectButton.addEventListener('click', connect);
 
 const table = document.getElementById('table');
+
+const chartConfig = {
+    type: 'line',
+    data: {
+        datasets: [
+            {
+                label: "Temperature",
+                data: [],
+                borderColor: 'rgba(255, 0, 0, 1)',
+                backgroundColor: 'rgba(255, 0, 0, 0.5)',
+                yAxisID: 'y'
+            },
+            {
+                label: "CO₂",
+                data: [],
+                borderColor: 'rgba(0, 0, 255, 1)',
+                backgroundColor: 'rgba(0, 0, 255, 0.5)',
+                yAxisID: 'y1'
+            }
+        ]
+    },
+    options: {
+        scales: {
+            x: {
+                type: 'timeseries'
+            },
+            y: {
+                type: 'linear',
+                display: true,
+                position: 'left'
+            },
+            y1: {
+                type: 'linear',
+                display: true,
+                position: 'right',
+                grid: {
+                    drawOnChartArea: false
+                },
+            }
+        }
+    }
+};
+const chart = new Chart(document.getElementById('chart'), chartConfig);
 
 const celsiusButton = document.getElementById('celsius');
 const fahrenheitButton = document.getElementById('fahrenheit');
@@ -110,6 +160,8 @@ function kelvinToFahrenheit(value) {
 }
 
 function onInputReport(report) {
+    const date = new Date();
+
     let data = new Uint8Array(report.data.buffer,
                                 report.data.byteOffset,
                                 report.data.byteLength);
@@ -135,9 +187,13 @@ function onInputReport(report) {
 
         currentTemperature = `${val.toFixed(2)}&deg; ${unit}`;
         newData = true;
+
+        chart.data.datasets[0].data.push({ x: date, y: val });
     } else if (op == 0x50) {
         currentCO2 = `${val} ppm`;
         newData = true;
+
+        chart.data.datasets[1].data.push({ x: date, y: val });
     } else {
         console.log(`Unknown operation: ${op}`, data);
     }
@@ -145,10 +201,12 @@ function onInputReport(report) {
     if (newData) {
         const row = table.insertRow(1);
         row.innerHTML = `
-            <td>${new Date()}</td>
+            <td>${date}</td>
             <td>${currentCO2}</td>
             <td>${currentTemperature}</td>
         `;
+
+        chart.update();
     }
 }
 
