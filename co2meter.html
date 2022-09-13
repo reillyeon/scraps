@@ -93,15 +93,16 @@ const chartConfig = {
             y: {
                 type: 'linear',
                 display: true,
-                position: 'left'
+                position: 'left',
+
+                grid: {
+                    drawOnChartArea: false
+                }
             },
             y1: {
                 type: 'linear',
                 display: true,
-                position: 'right',
-                grid: {
-                    drawOnChartArea: false
-                },
+                position: 'right'
             }
         }
     }
@@ -210,16 +211,46 @@ function onInputReport(report) {
     }
 }
 
+let currentDevice = null;
+
+async function connectToDevice(device) {
+    currentDevice = device;
+
+    try {
+        currentDevice.addEventListener('inputreport', onInputReport);
+        await currentDevice.open();
+        await currentDevice.sendFeatureReport(0, key);
+        connectButton.disabled = true;
+    } catch {
+        currentDevice.close().then(() => {});
+        currentDevice.removeEventListener('inputreport', onInputReport);
+        currentDevice = null;
+        connectButton.disabled = false;
+    }
+}
+
 async function connect() {
     const devices = await navigator.hid.requestDevice({
         filters: [{vendorId: 0x04D9, productId: 0xA052}]
     });
-    const device = devices[0];
-    device.addEventListener('inputreport', onInputReport);
-    await device.open();
-    await device.sendFeatureReport(0, key);
-    connectButton.disabled = true;
+    await connectToDevice(devices[0]);
 }
+
+navigator.hid.addEventListener('connect', async (e) => {
+    if (currentDevice)
+        return;
+
+    connectToDevice(e.device);
+});
+
+navigator.hid.addEventListener('disconnect', async (e) => {
+    if (e.device === currentDevice) {
+        currentDevice.close().then(() => {});
+        currentDevice.removeEventListener('inputreport', onInputReport);
+        currentDevice = null;
+        connectButton.disabled = false;
+    }
+});
 
 </script>
 </body>
