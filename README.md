@@ -5,6 +5,7 @@ Bits of code that I need to put somewhere. Usually used so that I can serve an e
 * [Benchmarking tool for the Web Serial API](serial-benchmark.html)
 * [Control Valve Index Base Stations with Web Bluetooth](lighthouse-v2.html)
 * [DeviceOrientation Events API demo](deviceorientation.html)
+* [ePadLink signature pad demo](epadlink.html)
 * [Geolocation API demo](geolocation.html) ([old version](watch-position.html))
 * [Idle Detection API demo](idle.html)
 * [List supported Barcode Detection formats](barcodedetection.html)
