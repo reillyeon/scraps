@@ -1,6 +1,9 @@
-<html>
+<!DOCTYPE html>
+<html lang="en-US">
 <head>
 <title>Xiaomi LYWSD02 Set Time</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="initial-scale=2">
 </head>
 <body>
 <button id="set">Set Time</button> <span id="status"></span>
@@ -13,7 +16,8 @@ document.getElementById('set').addEventListener('click', async () => {
 
   const options = {
     filters: [
-      {name: 'LYWSD02'}
+      {name: 'LYWSD02'},
+      {name: 'LYWSD02MMC'}
     ],
     optionalServices: [SERVICE_UUID],
   };
