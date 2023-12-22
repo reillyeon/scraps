@@ -9,6 +9,26 @@
       <span id="c">?</span>
     </p>
     <p>
+      Device preference:
+      <select id="device">
+        <option selected value="auto">Auto</option>
+        <option value="cpu">CPU</option>
+        <option value="gpu">GPU</option>
+      </select>
+    </p>
+    <p>
+      Power preference:
+      <select id="power">
+        <option selected value="auto">Auto</option>
+        <option value="low-power">Low power</option>
+        <option value="high-performance">High performance</option>
+      </select>
+    </p>
+    <p>
+      Number of threads:
+      <input id="threads" type="number" value="0">
+    </p>
+    <p>
       <button id="build">Build</button> <button disabled id="compute">Compute</button>
     </p>
     <p>
@@ -18,6 +38,9 @@
       const aInput = document.getElementById('a');
       const bInput = document.getElementById('b');
       const cOutput = document.getElementById('c');
+      const deviceOption = document.getElementById('device');
+      const powerOption = document.getElementById('power');
+      const threadsOption = document.getElementById('threads');
       const buildButton = document.getElementById('build');
       const computeButton = document.getElementById('compute');
       const outputSpan = document.getElementById('output');
@@ -29,7 +52,14 @@
         try {
           computeButton.disabled = true;
 
-          context = await navigator.ml.createContext();
+          const options = {
+            devicePreference: deviceOption.value,
+            powerPreference: powerOption.value,
+            numThreads: threadsOption.value,
+          };
+          console.log(options);
+          context = await navigator.ml.createContext(options);
+
           const builder = new MLGraphBuilder(context);
           const operandType = {dataType: 'float32', dimensions: [1]};
           const a = builder.input('a', operandType);
