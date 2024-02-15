@@ -11,8 +11,7 @@
     <p>
       Device preference:
       <select id="device">
-        <option selected value="auto">Auto</option>
-        <option value="cpu">CPU</option>
+        <option selected value="cpu">CPU</option>
         <option value="gpu">GPU</option>
       </select>
     </p>
@@ -23,10 +22,6 @@
         <option value="low-power">Low power</option>
         <option value="high-performance">High performance</option>
       </select>
-    </p>
-    <p>
-      Number of threads:
-      <input id="threads" type="number" value="0">
     </p>
     <p>
       <button id="build">Build</button> <button disabled id="compute">Compute</button>
@@ -53,9 +48,8 @@
           computeButton.disabled = true;
 
           const options = {
-            devicePreference: deviceOption.value,
+            deviceType: deviceOption.value,
             powerPreference: powerOption.value,
-            numThreads: threadsOption.value,
           };
           console.log(options);
           context = await navigator.ml.createContext(options);
