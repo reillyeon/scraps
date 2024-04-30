@@ -93,27 +93,55 @@
 
       const outputCanvas = document.getElementById('output');
       const outputCtx = outputCanvas.getContext('2d');
+      const statusSpan = document.getElementById('status');
 
       async function run() {
-        const statusSpan = document.getElementById('status');
         statusSpan.textContent = '';
 
         try {
           outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
 
           const context = await navigator.ml.createContext({deviceType: deviceTypeElement.value});
+
+          const buildStart = performance.now();
           const {graph, outputWidth, outputHeight} = await createGraph(context);
+          const buildEnd = performance.now();
 
           const input = imageDataToTensor(inputData);
           const output = new Float32Array(outputWidth * outputHeight * channels);
 
+          const computeStart = performance.now();
           const {inputs, outputs} = await context.compute(graph, {input}, {output});
+          const computeEnd = performance.now();
 
           const outputData = tensorToImageData(outputs.output, outputWidth, outputHeight);
           outputCtx.putImageData(outputData, 0, 0);
+
+          statusSpan.textContent = `Build took ${(buildEnd - buildStart).toFixed(1)}ms. Compute took ${(computeEnd - computeStart).toFixed(1)}ms.`;
         } catch (e) {
           statusSpan.textContent = e.stack;
         }
+      }
+
+      function loadInput() {
+        const image = new Image();
+        image.onload = () => {
+          const inputCanvas = document.getElementById('input');
+          const inputCtx = inputCanvas.getContext('2d');
+          inputCtx.drawImage(image, 0, 0);
+          inputData = inputCtx.getImageData(0, 0, image.width, image.height);
+
+          if (!('ml' in navigator)) {
+            statusSpan.textContent = 'WebNN not supported in your browser.';
+            return;
+          }
+
+          deviceTypeElement.disabled = false;
+          filterSizeElement.disabled = false;
+          inputLayoutElement.disabled = false;
+          run();
+        };
+        image.src = 'photo.jpg';
       }
 
       const deviceTypeElement = document.getElementById('deviceType');
@@ -125,19 +153,7 @@
       const inputLayoutElement = document.getElementById('inputLayout');
       inputLayoutElement.onchange = run
 
-      const image = new Image();
-      image.onload = () => {
-        const inputCanvas = document.getElementById('input');
-        const inputCtx = inputCanvas.getContext('2d');
-        inputCtx.drawImage(image, 0, 0);
-        inputData = inputCtx.getImageData(0, 0, image.width, image.height);
-
-        deviceTypeElement.disabled = false;
-        filterSizeElement.disabled = false;
-        inputLayoutElement.disabled = false;
-        run();
-      };
-      image.src = 'photo.jpg';
+      loadInput();
     </script>
   </body>
 </html>
