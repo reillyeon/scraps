@@ -1,0 +1,83 @@
+<html>
+  <head>
+    <title>WebNN Conv2D</title>
+  </head>
+  <body>
+    <canvas id="input" width="500" height="500"></canvas>
+    <canvas id="output" width="500" height="500"></canvas>
+    <script>
+      async function createGraph(context) {
+        const builder = new MLGraphBuilder(context);
+        const channels = 3;
+        const filterWidth = 15;
+        const filterHeight = 15;
+        const input = builder.input(
+            'input', {dataType: 'float32', dimensions: [1, 500, 500, channels]});
+        const filterData = new Float32Array(filterWidth * filterHeight * channels);
+        filterData.fill(1 / (filterWidth * filterHeight));
+        const filter = builder.constant(
+            {dataType: 'float32', dimensions: [1, filterWidth, filterHeight, channels]},
+            filterData);
+        const output = builder.conv2d(input, filter, {
+            inputLayout: 'nhwc',
+            filterLayout: 'ihwo',  // IHWO is required for depthwise convolution.
+            groups: channels,  // Convolve each input channel with its own filter.
+            padding: [
+              (filterHeight - 1) / 2, (filterHeight - 1) / 2,
+              (filterWidth - 1) / 2, (filterWidth - 1) / 2
+            ],
+        });
+        return builder.build({'output': output});
+      }
+
+      function imageDataToTensor(imageData) {
+        const tensor = new Float32Array(imageData.width * imageData.height * 3);
+        for (let srcOffset = 0; srcOffset < imageData.data.length; srcOffset += 4) {  // RGBA
+          const dstOffset = (srcOffset / 4) * 3;  // RGB
+          tensor[dstOffset] = imageData.data[srcOffset] / 256;          // R
+          tensor[dstOffset + 1] = imageData.data[srcOffset + 1] / 256;  // G
+          tensor[dstOffset + 2] = imageData.data[srcOffset + 2] / 256;  // B
+        }
+        return tensor;
+      }
+
+      function tensorToImageData(tensor, width, height) {
+        const imageData = new ImageData(width, height);
+        for (let dstOffset = 0; dstOffset < imageData.data.length; dstOffset += 4) {  // RGBA
+          const srcOffset = (dstOffset / 4) * 3;  // RGB
+          imageData.data[dstOffset] = tensor[srcOffset] * 256;          // R
+          imageData.data[dstOffset + 1] = tensor[srcOffset + 1] * 256;  // G
+          imageData.data[dstOffset + 2] = tensor[srcOffset + 2] * 256;  // B
+          imageData.data[dstOffset + 3] = 255;                          // A
+        }
+        return imageData;
+      }
+
+      async function runConvolution(inputData) {
+        const context = await navigator.ml.createContext({deviceType: 'cpu'});
+        const graph = await createGraph(context);
+
+        const input = imageDataToTensor(inputData);
+        const output = new Float32Array(input.length);
+
+        const {inputs, outputs} = await context.compute(graph, {input}, {output});
+
+        return tensorToImageData(outputs.output, inputData.width, inputData.height);
+      }
+
+      const image = new Image();
+      image.onload = async () => {
+        const inputCanvas = document.getElementById('input');
+        const inputCtx = inputCanvas.getContext('2d');
+        inputCtx.drawImage(image, 0, 0);
+        const inputData = inputCtx.getImageData(0, 0, image.width, image.height);
+
+        const outputData = await runConvolution(inputData);
+        const outputCanvas = document.getElementById('output');
+        const outputCtx = outputCanvas.getContext('2d');
+        outputCtx.putImageData(outputData, 0, 0);
+      };
+      image.src = 'photo.jpg';
+    </script>
+  </body>
+</html>

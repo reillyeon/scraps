@@ -14,4 +14,5 @@ Bits of code that I need to put somewhere. Usually used so that I can serve an e
 * [Set the time on a Xiaomi LYWSD02](xiaomi-lywsd02-set-time.html)
 * [Synchronous XMLHttpRequest demo](sync-xhr.html)
 * [Wake Lock API demo](wakelock.html)
-* [WebNN Simple Example](webnn-add.html)
+* [WebNN Add Example](webnn-add.html)
+* [WebNN Conv2D Example](webnn-conv2d.html)
