@@ -6,11 +6,12 @@
     <canvas id="input" width="500" height="500"></canvas>
     <canvas id="output" width="500" height="500"></canvas>
     <script>
+      const channels = 3;
+
       async function createGraph(context) {
         const builder = new MLGraphBuilder(context);
-        const channels = 3;
-        const filterWidth = 15;
-        const filterHeight = 15;
+        const filterWidth = 10;
+        const filterHeight = 10;
         const input = builder.input(
             'input', {dataType: 'float32', dimensions: [1, 500, 500, channels]});
         const filterData = new Float32Array(filterWidth * filterHeight * channels);
@@ -22,12 +23,12 @@
             inputLayout: 'nhwc',
             filterLayout: 'ihwo',  // IHWO is required for depthwise convolution.
             groups: channels,  // Convolve each input channel with its own filter.
-            padding: [
-              (filterHeight - 1) / 2, (filterHeight - 1) / 2,
-              (filterWidth - 1) / 2, (filterWidth - 1) / 2
-            ],
         });
-        return builder.build({'output': output});
+        return {
+          graph: await builder.build({'output': output}),
+          outputHeight: output.shape()[1],
+          outputWidth: output.shape()[2],
+        }
       }
 
       function imageDataToTensor(imageData) {
@@ -55,14 +56,14 @@
 
       async function runConvolution(inputData) {
         const context = await navigator.ml.createContext({deviceType: 'cpu'});
-        const graph = await createGraph(context);
+        const {graph, outputWidth, outputHeight} = await createGraph(context);
 
         const input = imageDataToTensor(inputData);
-        const output = new Float32Array(input.length);
+        const output = new Float32Array(outputWidth * outputHeight * 3);
 
         const {inputs, outputs} = await context.compute(graph, {input}, {output});
 
-        return tensorToImageData(outputs.output, inputData.width, inputData.height);
+        return tensorToImageData(outputs.output, outputWidth, outputHeight);
       }
 
       const image = new Image();
