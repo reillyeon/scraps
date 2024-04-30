@@ -3,15 +3,34 @@
     <title>WebNN Conv2D</title>
   </head>
   <body>
-    <canvas id="input" width="500" height="500"></canvas>
-    <canvas id="output" width="500" height="500"></canvas>
+    <p>
+      <label for="deviceType">Device preference:</label>
+      <select id="deviceType">
+        <option selected value="cpu">CPU</option>
+        <option value="gpu">GPU</option>
+        <option value="npu">NPU</option>
+      </select>
+    </p>
+    <p>
+      <label for="filterSize">Filter size:</label>
+      <input id="filterSize" type="number" min="1" max="50" value="5">
+    </p>
+    <table>
+      <tr><th>Input</th><th>Output</th></tr>
+      <tr>
+        <td><canvas id="input" width="500" height="500"></canvas></td>
+        <td><canvas id="output" width="500" height="500"></canvas></td>
+      </tr>
+    </table>
+    <pre id="status"></pre>
     <script>
       const channels = 4;
+      let inputData;
 
       async function createGraph(context) {
         const builder = new MLGraphBuilder(context);
-        const filterWidth = 10;
-        const filterHeight = 10;
+        const filterWidth = Number(filterSizeElement.value);
+        const filterHeight = Number(filterSizeElement.value);
         const input = builder.input(
             'input', {dataType: 'float32', dimensions: [1, 500, 500, channels]});
         const filterData = new Float32Array(filterWidth * filterHeight * channels);
@@ -47,29 +66,51 @@
         return imageData;
       }
 
-      async function runConvolution(inputData) {
-        const context = await navigator.ml.createContext({deviceType: 'cpu'});
-        const {graph, outputWidth, outputHeight} = await createGraph(context);
+      const outputCanvas = document.getElementById('output');
+      const outputCtx = outputCanvas.getContext('2d');
 
-        const input = imageDataToTensor(inputData);
-        const output = new Float32Array(outputWidth * outputHeight * channels);
+      async function run() {
+        const statusSpan = document.getElementById('status');
+        statusSpan.textContent = '';
 
-        const {inputs, outputs} = await context.compute(graph, {input}, {output});
+        try {
+          outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
 
-        return tensorToImageData(outputs.output, outputWidth, outputHeight);
+          const context = await navigator.ml.createContext({deviceType: deviceTypeElement.value});
+          const {graph, outputWidth, outputHeight} = await createGraph(context);
+
+          const input = imageDataToTensor(inputData);
+          const output = new Float32Array(outputWidth * outputHeight * channels);
+
+          const {inputs, outputs} = await context.compute(graph, {input}, {output});
+
+          const outputData = tensorToImageData(outputs.output, outputWidth, outputHeight);
+          outputCtx.putImageData(outputData, 0, 0);
+        } catch (e) {
+          statusSpan.textContent = e.stack;
+        }
       }
 
+      const deviceTypeElement = document.getElementById('deviceType');
+      deviceTypeElement.onchange = () => {
+        run();
+      };
+
+      const filterSizeElement = document.getElementById('filterSize');
+      filterSizeElement.onchange = () => {
+        run();
+      };
+
       const image = new Image();
-      image.onload = async () => {
+      image.onload = () => {
         const inputCanvas = document.getElementById('input');
         const inputCtx = inputCanvas.getContext('2d');
         inputCtx.drawImage(image, 0, 0);
-        const inputData = inputCtx.getImageData(0, 0, image.width, image.height);
+        inputData = inputCtx.getImageData(0, 0, image.width, image.height);
 
-        const outputData = await runConvolution(inputData);
-        const outputCanvas = document.getElementById('output');
-        const outputCtx = outputCanvas.getContext('2d');
-        outputCtx.putImageData(outputData, 0, 0);
+        deviceTypeElement.disabled = false;
+        filterSizeElement.disabled = false;
+        run();
       };
       image.src = 'photo.jpg';
     </script>
