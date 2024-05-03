@@ -12,8 +12,15 @@
       </select>
     </p>
     <p>
-      <label for="filterSize">Filter size:</label>
-      <input id="filterSize" type="number" min="1" max="50" value="5" disabled>
+      <label for="filterType">Filter type:</label>
+      <select id="filterType" disabled>
+        <option selected value="blur">Blur</option>
+        <option value="grayscale">Grayscale</option>
+      </select>
+    </p>
+    <p>
+      <label for="blurRadius">Blur radius:</label>
+      <input id="blurRadius" type="number" min="1" max="50" value="2" disabled>
     </p>
     <p>
       <label for="inputLayout">Input layout:</label>
@@ -34,7 +41,7 @@
       const channels = 4;
       let inputData;
 
-      async function createGraph(context) {
+      async function createBlurGraph(context) {
         const inputLayout = inputLayoutElement.value;
         const builder = new MLGraphBuilder(context);
 
@@ -45,8 +52,8 @@
         }
 
         // Right now Chromium only supports one filter layout for each input layout.
-        const filterHeight = Number(filterSizeElement.value);
-        const filterWidth = Number(filterSizeElement.value);
+        const filterHeight = Number(blurRadiusElement.value) * 2 + 1;
+        const filterWidth = Number(blurRadiusElement.value) * 2 + 1;
         const filterLayout = inputLayout == 'nchw' ? 'oihw' : 'ihwo';
         const filterShape =
             filterLayout == 'oihw' ?
@@ -64,6 +71,43 @@
             inputLayout, filterLayout,
             groups: channels,  // Convolve each input channel with its own filter.
         });
+        if (inputLayout == 'nchw') {
+          output = builder.transpose(output, {permutation: [0, 2, 3, 1]})
+        }
+
+        return {
+          graph: await builder.build({'output': output}),
+          outputHeight: output.shape()[1],
+          outputWidth: output.shape()[2],
+        }
+      }
+
+      async function createGrayscaleGraph(context) {
+        const inputLayout = inputLayoutElement.value;
+        const builder = new MLGraphBuilder(context);
+
+        let input = builder.input(
+            'input', {dataType: 'float32', dimensions: [1, 500, 500, channels]});
+        if (inputLayout == 'nchw') {
+          input = builder.transpose(input, {permutation: [0, 3, 1, 2]})
+        }
+
+        // Right now Chromium only supports one filter layout for each input layout.
+        const filterLayout = inputLayout == 'nchw' ? 'oihw' : 'ohwi';
+        const filterShape =
+            filterLayout == 'oihw' ?
+              [channels, channels, 1, 1] : [channels, 1, 1, channels]
+
+        // Mix the RGB channels but not the alpha channel.
+        const filterData = Float32Array.of(
+            1/3, 1/3, 1/3, 0,
+            1/3, 1/3, 1/3, 0,
+            1/3, 1/3, 1/3, 0,
+            0, 0, 0, 1);
+        const filter = builder.constant(
+            {dataType: 'float32', dimensions: filterShape}, filterData);
+
+        let output = builder.conv2d(input, filter, {inputLayout, filterLayout});
         if (inputLayout == 'nchw') {
           output = builder.transpose(output, {permutation: [0, 2, 3, 1]})
         }
@@ -104,7 +148,9 @@
           const context = await navigator.ml.createContext({deviceType: deviceTypeElement.value});
 
           const buildStart = performance.now();
-          const {graph, outputWidth, outputHeight} = await createGraph(context);
+          const {graph, outputWidth, outputHeight} =
+              filterTypeElement.value == 'blur' ?
+                await createBlurGraph(context) : await createGrayscaleGraph(context);
           const buildEnd = performance.now();
 
           const input = imageDataToTensor(inputData);
@@ -137,7 +183,8 @@
           }
 
           deviceTypeElement.disabled = false;
-          filterSizeElement.disabled = false;
+          filterTypeElement.disabled = false;
+          blurRadiusElement.disabled = false;
           inputLayoutElement.disabled = false;
           run();
         };
@@ -147,8 +194,14 @@
       const deviceTypeElement = document.getElementById('deviceType');
       deviceTypeElement.onchange = run
 
-      const filterSizeElement = document.getElementById('filterSize');
-      filterSizeElement.onchange = run
+      const filterTypeElement = document.getElementById('filterType');
+      filterTypeElement.onchange = () => {
+        blurRadiusElement.disabled = filterTypeElement.value != 'blur';
+        run();
+      };
+
+      const blurRadiusElement = document.getElementById('blurRadius');
+      blurRadiusElement.onchange = run
 
       const inputLayoutElement = document.getElementById('inputLayout');
       inputLayoutElement.onchange = run
