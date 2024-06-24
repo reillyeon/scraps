@@ -1,0 +1,159 @@
+<html>
+<head>
+    <title>MiniDisc Label Printer</title>
+</head>
+<body>
+<p>Enter up to 5 titles:</p>
+<p>
+    <input type="text" id="label0" size="80" value=""></input><br>
+    <input type="text" id="label1" size="80" value=""></input><br>
+    <input type="text" id="label2" size="80" value=""></input><br>
+    <input type="text" id="label3" size="80" value=""></input><br>
+    <input type="text" id="label4" size="80" value=""></input>
+</p>
+<p>
+    <button id="print">Print</button>
+    <span id="status">No printer detected.</span>
+</p>
+<p>
+    Raw ZPL:
+</p>
+<textarea id="label" cols="80" rows="35"></textarea>
+<p>
+    Click to copy to clipboard. Paste into
+    <a href="https://labelary.com/viewer.html">Labelary Online ZPL Viewer</a>
+    to preview.
+</p>
+<script>
+const kNumLabels = 5;
+
+let status = document.getElementById('status');
+let device;
+let label = document.getElementById('label');
+
+function updateLabel() {
+    const kLeftMargin = 15;
+    const kTopMargin = 25;
+    const kLabelHeight = 30;
+    const kLabelWidth = 470;
+
+    const kPreamble = [
+        '^XA',
+        '^PR2',
+        '^PW609',
+        '^LL203',
+        '^LH0,0',
+        '^LS0',
+        '^LT0',
+        '^CFQ',
+    ];
+
+    const body = [];
+    let x = kLeftMargin;
+    let y = kTopMargin;
+    body.push(`^FO${x},${y}^GB10,1,1^FS`);
+    body.push(`^FO${x+230},${y}^GB10,1,1^FS`);
+    body.push(`^FO${x+460},${y}^GB10,1,1^FS`);
+
+    for (let i = 0; i < kNumLabels; ++i) {
+        const input = document.getElementById(`label${i}`);
+        body.push(`^FO${x},${y+2}^FD${input.value}^FS`);
+        y += kLabelHeight;
+        body.push(`^FO${x},${y}^GB10,1,1^FS`);
+        body.push(`^FO${x+230},${y}^GB10,1,1^FS`);
+        body.push(`^FO${x+460},${y}^GB10,1,1^FS`);
+    }
+
+    const kEpilogue = [
+        '^XZ',
+    ];
+
+    label.value = kPreamble.concat(body, kEpilogue).join('\n');
+}
+
+updateLabel();
+
+label.onclick = () => {
+    label.select();
+    document.execCommand('copy');
+};
+
+for (let i = 0; i < kNumLabels; ++i) {
+    const input = document.getElementById(`label${i}`);
+    input.oninput = () => {
+        updateLabel();
+    };
+}
+
+navigator.usb.getDevices().then((devices) => {
+    if (devices.length > 0) {
+        device = devices[0];
+        status.textContent = 'Printer ready.';
+    }
+
+    if (devices.length > 1) {
+        status.textContent = 'More than one printer detected, using the first one.';
+    }
+});
+
+navigator.usb.addEventListener('connect', (e) => {
+    if (device) {
+        status.textContent = 'More than one printer detected, using the first one.';
+    } else {
+        device = e.device;
+        status.textContent = 'Printer ready.';
+    }
+});
+
+navigator.usb.addEventListener('disconnect', (e) => {
+    if (device == e.device) {
+        device = null;
+        status.textContent = 'Printer disconnected.';
+    }
+});
+
+document.getElementById('print').addEventListener('click', async () => {
+    if (!device) {
+        try {
+            device = await navigator.usb.requestDevice({ filters: [
+                { vendorId: 0x0a5f },  // Zebra
+            ]});
+            status.textContent = 'Printer ready.';
+        } catch (e) {
+            status.textContent = 'No device selected.';
+            return;
+        }
+    }
+
+    await device.open();
+
+    try {
+        await device.selectConfiguration(1);
+        await device.claimInterface(0);
+        await device.selectAlternateInterface(0, 0);
+
+        let outEndpoint;
+        for (let endpoint of device.configuration.interfaces[0].alternate.endpoints) {
+            if (endpoint.direction == 'out') {
+                outEndpoint = endpoint;
+                break;
+            }
+        }
+
+        if (!outEndpoint) {
+            status.textContent = 'No OUT endpoint found.';
+            return;
+        }
+
+        const buffer = (new TextEncoder()).encode(label.value);
+        await device.transferOut(outEndpoint.endpointNumber, buffer);
+        status.textContent = 'Document printed.';
+    } catch (e) {
+        status.textContent = `${e.name}: ${e.message}`;
+    } finally {
+        await device.close();
+    }
+});
+</script>
+</body>
+</html>

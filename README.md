@@ -9,6 +9,7 @@ Bits of code that I need to put somewhere. Usually used so that I can serve an e
 * [Geolocation API demo](geolocation.html) ([old version](watch-position.html))
 * [Idle Detection API demo](idle.html)
 * [List supported Barcode Detection formats](barcodedetection.html)
+* [MiniDisc label printer](minidisc-label.html)
 * [Read from RAD-0301 Mini CO₂ monitor with WebHID](co2meter.html)
 * [Send raw EPL, ZPL or ESC/POS commands to USB printers](printer-tool.html)
 * [Set the time on a Xiaomi LYWSD02](xiaomi-lywsd02-set-time.html)
