@@ -24,6 +24,10 @@
       </select>
     </p>
     <p>
+      <label for="dispatch">Use <code>MLBuffer</code>:</label>
+      <input id="dispatch" type="checkbox">
+    </p>
+    <p>
       <button id="build">Build</button> <button disabled id="compute">Compute</button>
     </p>
     <p>
@@ -35,13 +39,59 @@
       const cOutput = document.getElementById('c');
       const deviceOption = document.getElementById('device');
       const powerOption = document.getElementById('power');
-      const threadsOption = document.getElementById('threads');
+      const dispatchCheckbox = document.getElementById('dispatch');
       const buildButton = document.getElementById('build');
       const computeButton = document.getElementById('compute');
       const outputSpan = document.getElementById('output');
 
+      const operandType = {dataType: 'float32', dimensions: [1]};
+      const inputMLBuffers = {'a': null, 'b': null};
+      const outputMLBuffers = {'c': null};
+
       let context;
       let graph;
+
+      function createMLBuffers() {
+        inputMLBuffers.a = context.createBuffer(operandType);
+        inputMLBuffers.b = context.createBuffer(operandType);
+        outputMLBuffers.c = context.createBuffer(operandType);
+      }
+
+      function destroyMLBuffers() {
+        if (inputMLBuffers.a) {
+          inputMLBuffers.a.destroy();
+          inputMLBuffers.a = null;
+        }
+        if (inputMLBuffers.b) {
+          inputMLBuffers.b.destroy();
+          inputMLBuffers.b = null;
+        }
+        if (outputMLBuffers.c) {
+          outputMLBuffers.c.destroy();
+          outputMLBuffers.c = null;
+        }
+      }
+
+      function contextOptionsChanged() {
+        destroyMLBuffers();
+        buildButton.disabled = false;
+        computeButton.disabled = true;
+        context = null;
+        graph = null;
+      }
+
+      deviceOption.addEventListener('change', contextOptionsChanged);
+      powerOption.addEventListener('change', contextOptionsChanged);
+
+      dispatchCheckbox.addEventListener('change', () => {
+        if (dispatchCheckbox.checked) {
+          if (context) {
+            createMLBuffers();
+          }
+        } else {
+          destroyMLBuffers();
+        }
+      });
 
       buildButton.addEventListener('click', async () => {
         try {
@@ -54,8 +104,11 @@
           console.log(options);
           context = await navigator.ml.createContext(options);
 
+          if (dispatchCheckbox.checked) {
+            createMLBuffers();
+          }
+
           const builder = new MLGraphBuilder(context);
-          const operandType = {dataType: 'float32', dimensions: [1]};
           const a = builder.input('a', operandType);
           const b = builder.input('b', operandType);
           const c = builder.add(a, b);
@@ -63,6 +116,7 @@
 
           outputSpan.textContent = 'Graph ready!'
           computeButton.disabled = false;
+          buildButton.disabled = true;
         } catch (e) {
           outputSpan.textContent = `${e.name}: ${e.message}`;
         }
@@ -78,10 +132,21 @@
 
           inputs.a[0] = aInput.value;
           inputs.b[0] = bInput.value;
-          ({inputs, outputs} = await context.compute(graph, inputs, outputs));
 
-          outputSpan.textContent = 'Compute finished!';
+          if (dispatchCheckbox.checked) {
+            context.writeBuffer(inputMLBuffers.a, inputs.a);
+            context.writeBuffer(inputMLBuffers.b, inputs.b);
+
+            context.dispatch(graph, inputMLBuffers, outputMLBuffers);
+
+            const buffer = await context.readBuffer(outputMLBuffers.c);
+            outputs.c = new Float32Array(buffer);
+          } else {
+            ({inputs, outputs} = await context.compute(graph, inputs, outputs));
+          }
+
           cOutput.textContent = outputs.c[0];
+          outputSpan.textContent = 'Compute finished!';
         } catch (e) {
           outputSpan.textContent = `${e.name}: ${e.message}`;
         }
