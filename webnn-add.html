@@ -24,6 +24,19 @@
       </select>
     </p>
     <p>
+      Data type:
+      <select id="dataType">
+        <option value="float16">float16</option>
+        <option selected value="float32">float32</option>
+        <option value="int8">int8</option>
+        <option value="uint8">uint8</option>
+        <option value="int32">int32</option>
+        <option value="uint32">uint32</option>
+        <option value="int64">int64</option>
+        <option value="uint64">uint64</option>
+      </select>
+    </p>
+    <p>
       <label for="dispatch">Use <code>MLBuffer</code>:</label>
       <input id="dispatch" type="checkbox">
     </p>
@@ -39,22 +52,135 @@
       const cOutput = document.getElementById('c');
       const deviceOption = document.getElementById('device');
       const powerOption = document.getElementById('power');
+      const dataTypeOption = document.getElementById('dataType');
       const dispatchCheckbox = document.getElementById('dispatch');
       const buildButton = document.getElementById('build');
       const computeButton = document.getElementById('compute');
       const outputSpan = document.getElementById('output');
 
-      const operandType = {dataType: 'float32', dimensions: [1]};
+      let inputs = {'a': null, 'b': null};
+      let outputs = {'c': null};
+
       const inputMLBuffers = {'a': null, 'b': null};
       const outputMLBuffers = {'c': null};
 
       let context;
       let graph;
 
+      function getOperandDescriptor() {
+        const dataType = dataTypeOption.value;
+        return {dataType, dimensions: [1]};
+      }
+
+      function getTypedArrayConstructor() {
+        switch (dataTypeOption.value) {
+          case 'float16':
+            return Uint16Array;
+          case 'float32':
+            return Float32Array;
+          case 'int8':
+            return Int8Array;
+          case 'uint8':
+            return Uint8Array;
+          case 'int32':
+            return Int32Array;
+          case 'uint32':
+            return Uint32Array;
+          case 'int64':
+            return BigInt64Array;
+          case 'uint64':
+            return BigUint64Array;
+        }
+      }
+
+      // ref: http://stackoverflow.com/questions/32633585/how-do-you-convert-to-half-floats-in-javascript
+      function toHalf(value) {
+        const floatView = new Float32Array(1);
+        const int32View = new Int32Array(floatView.buffer);
+
+        // This method is faster than the OpenEXR implementation (very often
+        // used, eg. in Ogre), with the additional benefit of rounding, inspired
+        // by James Tursa's half-precision code.
+
+        floatView[0] = value;
+        const x = int32View[0];
+
+        let bits = (x >> 16) & 0x8000;  // Get the sign
+        let m = (x >> 12) & 0x07ff;     // Keep one extra bit for rounding
+        const e = (x >> 23) & 0xff;       // Using int is faster here
+
+        // If zero, or denormal, or exponent underflows too much for a denormal
+        // half, return signed zero.
+        if (e < 103) {
+          return bits;
+        }
+
+        // If NaN, return NaN. If Inf or exponent overflow, return Inf.
+        if (e > 142) {
+          bits |= 0x7c00;
+          // If exponent was 0xff and one mantissa bit was set, it means NaN,
+          // not Inf, so make sure we set one mantissa bit too.
+          bits |= ((e == 255) ? 0 : 1) && (x & 0x007fffff);
+          return bits;
+        }
+
+        // If exponent underflows but not too much, return a denormal
+        if (e < 113) {
+          m |= 0x0800;
+          // Extra rounding may overflow and set mantissa to 0 and exponent
+          // to 1, which is OK.
+          bits |= (m >> (114 - e)) + ((m >> (113 - e)) & 1);
+          return bits;
+        }
+
+        bits |= ((e - 112) << 10) | (m >> 1);
+        // Extra rounding. An overflow will set mantissa to 0 and increment
+        // the exponent, which is OK.
+        bits += m & 1;
+        return bits;
+      }
+
+      // ref: https://stackoverflow.com/questions/5678432/decompressing-half-precision-floats-in-javascript
+      function fromHalf(h) {
+        const s = (h & 0x8000) >> 15 ? -1 : 1;
+        const e = (h & 0x7C00) >> 10;
+        const f = h & 0x03FF;
+
+        if (e == 0) {
+          return s * Math.pow(2, -14) * (f / Math.pow(2, 10));
+        } else if (e == 0x1F) {
+          return f ? NaN : (s * Infinity);
+        }
+
+        return s * Math.pow(2, e - 15) * (1 + (f / Math.pow(2, 10)));
+      }
+
+      function maybeEncodeInput(input) {
+        if (dataTypeOption.value == 'float16') {
+          return toHalf(input);
+        }
+        return input;
+      }
+
+      function maybeDecodeOutput(output) {
+        if (dataTypeOption.value == 'float16') {
+          return fromHalf(output);
+        }
+        return output;
+      }
+
+      function createArrayBuffers() {
+        const typedArray = getTypedArrayConstructor();
+        inputs.a = new typedArray(1);
+        inputs.b = new typedArray(1);
+        outputs.c = new typedArray(1);
+      }
+
       function createMLBuffers() {
-        inputMLBuffers.a = context.createBuffer(operandType);
-        inputMLBuffers.b = context.createBuffer(operandType);
-        outputMLBuffers.c = context.createBuffer(operandType);
+        const operandDescriptor = getOperandDescriptor();
+        inputMLBuffers.a = context.createBuffer(operandDescriptor);
+        inputMLBuffers.b = context.createBuffer(operandDescriptor);
+        outputMLBuffers.c = context.createBuffer(operandDescriptor);
       }
 
       function destroyMLBuffers() {
@@ -73,15 +199,23 @@
       }
 
       function contextOptionsChanged() {
+        context = null;
+        graphOptionsChanged();
+      }
+
+      function graphOptionsChanged() {
+        createArrayBuffers();
         destroyMLBuffers();
         buildButton.disabled = false;
         computeButton.disabled = true;
-        context = null;
         graph = null;
       }
 
       deviceOption.addEventListener('change', contextOptionsChanged);
       powerOption.addEventListener('change', contextOptionsChanged);
+      dataTypeOption.addEventListener('change', graphOptionsChanged);
+
+      createArrayBuffers();
 
       dispatchCheckbox.addEventListener('change', () => {
         if (dispatchCheckbox.checked) {
@@ -109,8 +243,9 @@
           }
 
           const builder = new MLGraphBuilder(context);
-          const a = builder.input('a', operandType);
-          const b = builder.input('b', operandType);
+          const operandDescriptor = getOperandDescriptor();
+          const a = builder.input('a', operandDescriptor);
+          const b = builder.input('b', operandDescriptor);
           const c = builder.add(a, b);
           graph = await builder.build({'c': c});
 
@@ -122,16 +257,13 @@
         }
       });
 
-      let inputs = {'a': new Float32Array(1), 'b': new Float32Array(1)};
-      let outputs = {'c': new Float32Array(1)};
-
       computeButton.addEventListener('click', async () => {
         try {
           outputSpan.textContent = 'Compute running...';
           cOutput.textContent = '?';
 
-          inputs.a[0] = aInput.value;
-          inputs.b[0] = bInput.value;
+          inputs.a[0] = maybeEncodeInput(aInput.value);
+          inputs.b[0] = maybeEncodeInput(bInput.value);
 
           if (dispatchCheckbox.checked) {
             context.writeBuffer(inputMLBuffers.a, inputs.a);
@@ -140,12 +272,13 @@
             context.dispatch(graph, inputMLBuffers, outputMLBuffers);
 
             const buffer = await context.readBuffer(outputMLBuffers.c);
-            outputs.c = new Float32Array(buffer);
+            const typedArray = getTypedArrayConstructor();
+            outputs.c = new typedArray(buffer);
           } else {
             ({inputs, outputs} = await context.compute(graph, inputs, outputs));
           }
 
-          cOutput.textContent = outputs.c[0];
+          cOutput.textContent = maybeDecodeOutput(outputs.c[0]);
           outputSpan.textContent = 'Compute finished!';
         } catch (e) {
           outputSpan.textContent = `${e.name}: ${e.message}`;
