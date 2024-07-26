@@ -13,8 +13,8 @@
       </select>
     </p>
     <p>
-      Data type:
-      <select id="dataType">
+      <label for="dataType">Data type:</label>
+      <select id="dataType" disabled>
         <option value="float16">float16</option>
         <option selected value="float32">float32</option>
       </select>
@@ -283,6 +283,7 @@
           }
 
           deviceTypeElement.disabled = false;
+          dataTypeOption.disabled = false;
           filterTypeElement.disabled = false;
           blurRadiusElement.disabled = false;
           inputLayoutElement.disabled = false;
