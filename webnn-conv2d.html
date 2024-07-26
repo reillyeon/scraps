@@ -58,6 +58,7 @@
 
       let context;
       let graph;
+      let inputData;
       let inputs = {input: null};
       let outputs = {output: null};
       let inputBuffer;
@@ -273,7 +274,7 @@
           const inputCanvas = document.getElementById('input');
           const inputCtx = inputCanvas.getContext('2d');
           inputCtx.drawImage(image, 0, 0);
-          const inputData = inputCtx.getImageData(0, 0, image.width, image.height);
+          inputData = inputCtx.getImageData(0, 0, image.width, image.height);
           inputs.input = imageDataToTensor(inputData);
 
           if (!('ml' in navigator)) {
@@ -307,7 +308,10 @@
       deviceTypeElement.onchange = contextOptionsChanged
 
       const dataTypeOption = document.getElementById('dataType');
-      dataTypeOption.onchange = graphOptionsChanged;
+      dataTypeOption.onchange = () => {
+        inputs.input = imageDataToTensor(inputData);
+        graphOptionsChanged();
+      };
 
       const filterTypeElement = document.getElementById('filterType');
       filterTypeElement.onchange = () => {
