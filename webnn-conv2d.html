@@ -1,6 +1,7 @@
 <html>
   <head>
     <title>WebNN Conv2D</title>
+    <script src="half-floats.js"></script>
   </head>
   <body>
     <p>
@@ -9,6 +10,13 @@
         <option selected value="cpu">CPU</option>
         <option value="gpu">GPU</option>
         <option value="npu">NPU</option>
+      </select>
+    </p>
+    <p>
+      Data type:
+      <select id="dataType">
+        <option value="float16">float16</option>
+        <option selected value="float32">float32</option>
       </select>
     </p>
     <p>
@@ -46,7 +54,7 @@
     <pre id="status"></pre>
     <script>
       const channels = 4;
-      const inputDescriptor = {dataType: 'float32', dimensions: [1, 500, 500, channels]};
+      const inputShape = [1, 500, 500, channels];
 
       let context;
       let graph;
@@ -56,11 +64,33 @@
       let outputBuffer;
       let outputDescriptor;
 
+      function getTypedArrayConstructor() {
+        switch (dataTypeOption.value) {
+          case 'float16':
+            return Uint16Array;
+          case 'float32':
+            return Float32Array;
+        }
+      }
+
+      function maybeConvertFilterData(float32Data) {
+        switch (dataTypeOption.value) {
+          case 'float16':
+            const float16Data = new Uint16Array(float32Data.length);
+            for (let i = 0; i < float32Data.length; ++i) {
+              float16Data[i] = toHalf(float32Data[i]);
+            }
+            return float16Data;
+          case 'float32':
+            return float32Data;
+        }
+      }
+
       async function createBlurGraph(context) {
         const inputLayout = inputLayoutElement.value;
         const builder = new MLGraphBuilder(context);
 
-        let input = builder.input('input', inputDescriptor);
+        let input = builder.input('input', {dataType: dataTypeOption.value, dimensions: inputShape});
         if (inputLayout == 'nchw') {
           input = builder.transpose(input, {permutation: [0, 3, 1, 2]})
         }
@@ -76,10 +106,11 @@
 
         // A simple blur filter is easy because the layout doesn't matter, the
         // elements simply have to sum to 1.
-        const filterData = new Float32Array(filterHeight * filterWidth * channels);
+        let filterData = new Float32Array(filterHeight * filterWidth * channels);
         filterData.fill(1 / (filterHeight * filterWidth));
+        filterData = maybeConvertFilterData(filterData);
         const filter = builder.constant(
-            {dataType: 'float32', dimensions: filterShape}, filterData);
+            {dataType: dataTypeOption.value, dimensions: filterShape}, filterData);
 
         let output = builder.conv2d(input, filter, {
             inputLayout, filterLayout,
@@ -97,7 +128,7 @@
         const inputLayout = inputLayoutElement.value;
         const builder = new MLGraphBuilder(context);
 
-        let input = builder.input('input', inputDescriptor);
+        let input = builder.input('input', {dataType: dataTypeOption.value, dimensions: inputShape});
         if (inputLayout == 'nchw') {
           input = builder.transpose(input, {permutation: [0, 3, 1, 2]})
         }
@@ -109,13 +140,13 @@
               [channels, channels, 1, 1] : [channels, 1, 1, channels]
 
         // Mix the RGB channels but not the alpha channel.
-        const filterData = Float32Array.of(
+        const filterData = maybeConvertFilterData(Float32Array.of(
             1/3, 1/3, 1/3, 0,
             1/3, 1/3, 1/3, 0,
             1/3, 1/3, 1/3, 0,
-            0, 0, 0, 1);
+            0, 0, 0, 1));
         const filter = builder.constant(
-            {dataType: 'float32', dimensions: filterShape}, filterData);
+            {dataType: dataTypeOption.value, dimensions: filterShape}, filterData);
 
         let output = builder.conv2d(input, filter, {inputLayout, filterLayout});
         if (inputLayout == 'nchw') {
@@ -127,9 +158,17 @@
       }
 
       function imageDataToTensor(imageData) {
-        const tensor = new Float32Array(imageData.data.length);
+        const typedArray = getTypedArrayConstructor(dataTypeOption.value);
+        const tensor = new typedArray(imageData.data.length);
         for (let i = 0; i < imageData.data.length; ++i) {
-          tensor[i] = imageData.data[i] / 256;
+          switch (dataTypeOption.value) {
+            case 'float16':
+              tensor[i] = toHalf(imageData.data[i] / 256);
+              break;
+            case 'float32':
+              tensor[i] = imageData.data[i] / 256;
+              break;
+          }
         }
         return tensor;
       }
@@ -137,7 +176,14 @@
       function tensorToImageData(tensor, width, height) {
         const imageData = new ImageData(width, height);
         for (let i = 0; i < tensor.length; ++i) {
-          imageData.data[i] = tensor[i] * 256;
+          switch (dataTypeOption.value) {
+            case 'float16':
+              imageData.data[i] = fromHalf(tensor[i]) * 256;
+              break;
+            case 'float32':
+              imageData.data[i] = tensor[i] * 256;
+              break;
+          }
         }
         return imageData;
       }
@@ -151,15 +197,16 @@
 
         try {
           outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+          const typedArray = getTypedArrayConstructor(dataTypeOption.value);
 
           performance.mark('compute-start');
           if (dispatchCheckbox.checked) {
             context.dispatch(graph, {input: inputBuffer}, {output: outputBuffer});
             const buffer = await context.readBuffer(outputBuffer);
-            outputs.output = new Float32Array(buffer);
+            outputs.output = new typedArray(buffer);
           } else {
             const outputLength = outputDescriptor.dimensions.reduce((acc, value) => acc * value, 1);
-            outputs.output = new Float32Array(outputLength);
+            outputs.output = new typedArray(outputLength);
             ({inputs, outputs} = await context.compute(graph, inputs, outputs));
           }
           performance.mark('compute-end');
@@ -203,7 +250,7 @@
       }
 
       function createMLBuffers() {
-        inputBuffer = context.createBuffer(inputDescriptor);
+        inputBuffer = context.createBuffer({dataType: dataTypeOption.value, dimensions: inputShape});
         context.writeBuffer(inputBuffer, inputs.input);
 
         outputBuffer = context.createBuffer(outputDescriptor);
@@ -258,6 +305,9 @@
 
       const deviceTypeElement = document.getElementById('deviceType');
       deviceTypeElement.onchange = contextOptionsChanged
+
+      const dataTypeOption = document.getElementById('dataType');
+      dataTypeOption.onchange = graphOptionsChanged;
 
       const filterTypeElement = document.getElementById('filterType');
       filterTypeElement.onchange = () => {
