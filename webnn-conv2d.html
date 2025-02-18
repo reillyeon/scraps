@@ -37,10 +37,6 @@
         <option selected value="nhwc">Channels last (NHWC)</option>
       </select>
     </p>
-    <p>
-      <label for="dispatch">Use <code>MLBuffer</code>:</label>
-      <input id="dispatch" type="checkbox">
-    </p>
     <table>
       <tr><th>Input</th><th>Output</th></tr>
       <tr>
@@ -59,8 +55,7 @@
       let context;
       let graph;
       let inputData;
-      let inputs = {input: null};
-      let outputs = {output: null};
+      let tensorData;
       let inputBuffer;
       let outputBuffer;
       let outputDescriptor;
@@ -91,7 +86,7 @@
         const inputLayout = inputLayoutElement.value;
         const builder = new MLGraphBuilder(context);
 
-        let input = builder.input('input', {dataType: dataTypeOption.value, dimensions: inputShape});
+        let input = builder.input('input', {dataType: dataTypeOption.value, shape: inputShape});
         if (inputLayout == 'nchw') {
           input = builder.transpose(input, {permutation: [0, 3, 1, 2]})
         }
@@ -111,7 +106,7 @@
         filterData.fill(1 / (filterHeight * filterWidth));
         filterData = maybeConvertFilterData(filterData);
         const filter = builder.constant(
-            {dataType: dataTypeOption.value, dimensions: filterShape}, filterData);
+            {dataType: dataTypeOption.value, shape: filterShape}, filterData);
 
         let output = builder.conv2d(input, filter, {
             inputLayout, filterLayout,
@@ -121,15 +116,15 @@
           output = builder.transpose(output, {permutation: [0, 2, 3, 1]})
         }
 
-        graph = await builder.build({'output': output}),
-        outputDescriptor = {dataType: output.dataType(), dimensions: output.shape()};
+        outputDescriptor = {dataType: output.dataType, shape: output.shape};
+        return await builder.build({'output': output});
       }
 
       async function createGrayscaleGraph(context) {
         const inputLayout = inputLayoutElement.value;
         const builder = new MLGraphBuilder(context);
 
-        let input = builder.input('input', {dataType: dataTypeOption.value, dimensions: inputShape});
+        let input = builder.input('input', {dataType: dataTypeOption.value, shape: inputShape});
         if (inputLayout == 'nchw') {
           input = builder.transpose(input, {permutation: [0, 3, 1, 2]})
         }
@@ -147,15 +142,15 @@
             1/3, 1/3, 1/3, 0,
             0, 0, 0, 1));
         const filter = builder.constant(
-            {dataType: dataTypeOption.value, dimensions: filterShape}, filterData);
+            {dataType: dataTypeOption.value, shape: filterShape}, filterData);
 
         let output = builder.conv2d(input, filter, {inputLayout, filterLayout});
         if (inputLayout == 'nchw') {
           output = builder.transpose(output, {permutation: [0, 2, 3, 1]})
         }
 
-        graph = await builder.build({'output': output}),
-        outputDescriptor = {dataType: output.dataType(), dimensions: output.shape()};
+        outputDescriptor = {dataType: output.dataType, shape: output.shape};
+        return await builder.build({'output': output});
       }
 
       function imageDataToTensor(imageData) {
@@ -195,30 +190,28 @@
 
       async function computeGraph() {
         statusSpan.textContent = '';
+        computeButton.disabled = true;
 
         try {
           outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
           const typedArray = getTypedArrayConstructor(dataTypeOption.value);
 
           performance.mark('compute-start');
-          if (dispatchCheckbox.checked) {
-            context.dispatch(graph, {input: inputBuffer}, {output: outputBuffer});
-            const buffer = await context.readBuffer(outputBuffer);
-            outputs.output = new typedArray(buffer);
-          } else {
-            const outputLength = outputDescriptor.dimensions.reduce((acc, value) => acc * value, 1);
-            outputs.output = new typedArray(outputLength);
-            ({inputs, outputs} = await context.compute(graph, inputs, outputs));
-          }
+
+          context.dispatch(graph, {input: inputBuffer}, {output: outputBuffer});
+          await context.readTensor(outputBuffer, tensorData);
+
           performance.mark('compute-end');
 
-          const outputData = tensorToImageData(outputs.output, outputDescriptor.dimensions[1], outputDescriptor.dimensions[2]);
+          const outputData = tensorToImageData(tensorData, outputDescriptor.shape[1], outputDescriptor.shape[2]);
           outputCtx.putImageData(outputData, 0, 0);
 
           const computeMeasure = performance.measure('compute-measure', 'compute-start', 'compute-end');
           statusSpan.textContent = `Compute took ${(computeMeasure.duration).toFixed(1)}ms.`;
         } catch (e) {
           statusSpan.textContent = e.stack;
+        } finally {
+          computeButton.disabled = false;
         }
       }
 
@@ -229,16 +222,25 @@
           context = await navigator.ml.createContext({deviceType: deviceTypeElement.value});
 
           performance.mark('build-start');
+          let buildPromise;
           if (filterTypeElement.value == 'blur') {
-            await createBlurGraph(context);
+            buildPromise = createBlurGraph(context);
           } else {
-            await createGrayscaleGraph(context);
+            buildPromise = createGrayscaleGraph(context);
           }
+          const objects = await Promise.all([
+            buildPromise,
+            context.createTensor({dataType: dataTypeOption.value, shape: inputShape, writable: true}),
+            context.createTensor({...outputDescriptor, readable: true}),
+          ]);
           performance.mark('build-end');
 
-          if (dispatchCheckbox.checked) {
-            createMLBuffers();
-          }
+          graph = objects[0];
+          inputBuffer = objects[1];
+          outputBuffer = objects[2];
+
+          tensorData = imageDataToTensor(inputData);
+          context.writeTensor(inputBuffer, tensorData);
 
           buildButton.disabled = true;
           computeButton.disabled = false;
@@ -250,24 +252,6 @@
         }
       }
 
-      function createMLBuffers() {
-        inputBuffer = context.createBuffer({dataType: dataTypeOption.value, dimensions: inputShape});
-        context.writeBuffer(inputBuffer, inputs.input);
-
-        outputBuffer = context.createBuffer(outputDescriptor);
-      }
-
-      function destroyMLBuffers() {
-        if (inputBuffer) {
-          inputBuffer.destroy();
-          inputBuffer = null;
-        }
-        if (outputBuffer) {
-          outputBuffer.destroy();
-          outputBuffer = null;
-        }
-      }
-
       function loadInput() {
         const image = new Image();
         image.onload = () => {
@@ -275,7 +259,6 @@
           const inputCtx = inputCanvas.getContext('2d');
           inputCtx.drawImage(image, 0, 0);
           inputData = inputCtx.getImageData(0, 0, image.width, image.height);
-          inputs.input = imageDataToTensor(inputData);
 
           if (!('ml' in navigator)) {
             statusSpan.textContent = 'WebNN is not supported in your browser.';
@@ -293,26 +276,31 @@
       }
 
       function contextOptionsChanged() {
-        destroyMLBuffers();
         buildButton.disabled = false;
+
+        context?.destroy();
         context = null;
+
         graphOptionsChanged();
       }
 
       function graphOptionsChanged() {
         buildButton.disabled = false;
         computeButton.disabled = true;
+
+        inputBuffer?.destroy();
+        inputBuffer = null;
+        outputBuffer?.destroy();
+        outputBuffer = null;
+        graph?.destroy();
         graph = null;
       }
 
       const deviceTypeElement = document.getElementById('deviceType');
-      deviceTypeElement.onchange = contextOptionsChanged
+      deviceTypeElement.onchange = contextOptionsChanged;
 
       const dataTypeOption = document.getElementById('dataType');
-      dataTypeOption.onchange = () => {
-        inputs.input = imageDataToTensor(inputData);
-        graphOptionsChanged();
-      };
+      dataTypeOption.onchange = graphOptionsChanged;
 
       const filterTypeElement = document.getElementById('filterType');
       filterTypeElement.onchange = () => {
@@ -321,21 +309,10 @@
       };
 
       const blurRadiusElement = document.getElementById('blurRadius');
-      blurRadiusElement.onchange = graphOptionsChanged
+      blurRadiusElement.onchange = graphOptionsChanged;
 
       const inputLayoutElement = document.getElementById('inputLayout');
-      inputLayoutElement.onchange = graphOptionsChanged
-
-      const dispatchCheckbox = document.getElementById('dispatch');
-      dispatchCheckbox.onchange = () => {
-        if (dispatchCheckbox.checked) {
-          if (context) {
-            createMLBuffers();
-          }
-        } else {
-          destroyMLBuffers();
-        }
-      };
+      inputLayoutElement.onchange = graphOptionsChanged;
 
       const buildButton = document.getElementById('build');
       buildButton.onclick = buildGraph;
