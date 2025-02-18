@@ -14,6 +14,7 @@
       <select id="device">
         <option selected value="cpu">CPU</option>
         <option value="gpu">GPU</option>
+        <option value="npu">NPU</option>
       </select>
     </p>
     <p>
@@ -38,10 +39,6 @@
       </select>
     </p>
     <p>
-      <label for="dispatch">Use <code>MLBuffer</code>:</label>
-      <input id="dispatch" type="checkbox">
-    </p>
-    <p>
       <button id="build">Build</button> <button disabled id="compute">Compute</button>
     </p>
     <p>
@@ -59,18 +56,16 @@
       const computeButton = document.getElementById('compute');
       const outputSpan = document.getElementById('output');
 
-      let inputs = {'a': null, 'b': null};
-      let outputs = {'c': null};
-
-      const inputMLBuffers = {'a': null, 'b': null};
-      const outputMLBuffers = {'c': null};
+      let buffer = null;
+      const inputTensors = {'a': null, 'b': null};
+      const outputTensors = {'c': null};
 
       let context;
       let graph;
 
       function getOperandDescriptor() {
         const dataType = dataTypeOption.value;
-        return {dataType, dimensions: [1]};
+        return {dataType, shape: [1]};
       }
 
       function getTypedArrayConstructor() {
@@ -108,45 +103,27 @@
         return output;
       }
 
-      function createArrayBuffers() {
-        const typedArray = getTypedArrayConstructor();
-        inputs.a = new typedArray(1);
-        inputs.b = new typedArray(1);
-        outputs.c = new typedArray(1);
-      }
-
-      function createMLBuffers() {
-        const operandDescriptor = getOperandDescriptor();
-        inputMLBuffers.a = context.createBuffer(operandDescriptor);
-        inputMLBuffers.b = context.createBuffer(operandDescriptor);
-        outputMLBuffers.c = context.createBuffer(operandDescriptor);
-      }
-
-      function destroyMLBuffers() {
-        if (inputMLBuffers.a) {
-          inputMLBuffers.a.destroy();
-          inputMLBuffers.a = null;
-        }
-        if (inputMLBuffers.b) {
-          inputMLBuffers.b.destroy();
-          inputMLBuffers.b = null;
-        }
-        if (outputMLBuffers.c) {
-          outputMLBuffers.c.destroy();
-          outputMLBuffers.c = null;
-        }
-      }
-
-      function contextOptionsChanged() {
-        context = null;
-        graphOptionsChanged();
-      }
-
-      function graphOptionsChanged() {
-        createArrayBuffers();
-        destroyMLBuffers();
+      async function contextOptionsChanged() {
         buildButton.disabled = false;
         computeButton.disabled = true;
+
+        context?.destroy();
+        context = null;
+
+        await graphOptionsChanged();
+      }
+
+      async function graphOptionsChanged() {
+        buildButton.disabled = false;
+        computeButton.disabled = true;
+
+        inputTensors.a?.destroy();
+        inputTensors.a = null;
+        inputTensors.b?.destroy();
+        inputTensors.b = null;
+        outputTensors.c?.destroy();
+        outputTensors.c = null;
+        graph?.destroy();
         graph = null;
       }
 
@@ -154,73 +131,70 @@
       powerOption.addEventListener('change', contextOptionsChanged);
       dataTypeOption.addEventListener('change', graphOptionsChanged);
 
-      createArrayBuffers();
-
-      dispatchCheckbox.addEventListener('change', () => {
-        if (dispatchCheckbox.checked) {
-          if (context) {
-            createMLBuffers();
-          }
-        } else {
-          destroyMLBuffers();
-        }
-      });
-
       buildButton.addEventListener('click', async () => {
         try {
+          buildButton.disabled = true;
           computeButton.disabled = true;
 
-          const options = {
-            deviceType: deviceOption.value,
-            powerPreference: powerOption.value,
-          };
-          console.log(options);
-          context = await navigator.ml.createContext(options);
-
-          if (dispatchCheckbox.checked) {
-            createMLBuffers();
+          if (!context) {
+            const options = {
+              deviceType: deviceOption.value,
+              powerPreference: powerOption.value,
+            };
+            console.log(options);
+            context = await navigator.ml.createContext(options);
           }
+
+          const typedArray = getTypedArrayConstructor();
+          buffer = new typedArray(3);
 
           const builder = new MLGraphBuilder(context);
           const operandDescriptor = getOperandDescriptor();
           const a = builder.input('a', operandDescriptor);
           const b = builder.input('b', operandDescriptor);
           const c = builder.add(a, b);
-          graph = await builder.build({'c': c});
+
+          const objects = await Promise.all([
+            builder.build({'c': c}),
+            context.createTensor({...operandDescriptor, writable: true}),
+            context.createTensor({...operandDescriptor, writable: true}),
+            context.createTensor({...operandDescriptor, readable: true}),
+          ]);
+
+          graph = objects[0];
+          inputTensors.a = objects[1];
+          inputTensors.b = objects[2];
+          outputTensors.c = objects[3];
 
           outputSpan.textContent = 'Graph ready!'
           computeButton.disabled = false;
-          buildButton.disabled = true;
         } catch (e) {
           outputSpan.textContent = `${e.name}: ${e.message}`;
+          buildButton.disabled = false;
         }
       });
 
       computeButton.addEventListener('click', async () => {
         try {
+          computeButton.disabled = true;
+
           outputSpan.textContent = 'Compute running...';
           cOutput.textContent = '?';
 
-          inputs.a[0] = maybeEncodeInput(aInput.value);
-          inputs.b[0] = maybeEncodeInput(bInput.value);
+          buffer[0] = maybeEncodeInput(aInput.value);
+          buffer[1] = maybeEncodeInput(bInput.value);
 
-          if (dispatchCheckbox.checked) {
-            context.writeBuffer(inputMLBuffers.a, inputs.a);
-            context.writeBuffer(inputMLBuffers.b, inputs.b);
+          context.writeTensor(inputTensors.a, buffer.subarray(0, 1));
+          context.writeTensor(inputTensors.b, buffer.subarray(1, 2));
+          context.dispatch(graph, inputTensors, outputTensors);
+          await context.readTensor(outputTensors.c, buffer.subarray(2, 3));
 
-            context.dispatch(graph, inputMLBuffers, outputMLBuffers);
-
-            const buffer = await context.readBuffer(outputMLBuffers.c);
-            const typedArray = getTypedArrayConstructor();
-            outputs.c = new typedArray(buffer);
-          } else {
-            ({inputs, outputs} = await context.compute(graph, inputs, outputs));
-          }
-
-          cOutput.textContent = maybeDecodeOutput(outputs.c[0]);
+          cOutput.textContent = maybeDecodeOutput(buffer[2]);
           outputSpan.textContent = 'Compute finished!';
         } catch (e) {
           outputSpan.textContent = `${e.name}: ${e.message}`;
+        } finally {
+          computeButton.disabled = false;
         }
       });
     </script>
