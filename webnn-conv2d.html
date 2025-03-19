@@ -1,7 +1,6 @@
 <html>
   <head>
     <title>WebNN Conv2D</title>
-    <script src="half-floats.js"></script>
   </head>
   <body>
     <p>
@@ -63,7 +62,7 @@
       function getTypedArrayConstructor() {
         switch (dataTypeOption.value) {
           case 'float16':
-            return Uint16Array;
+            return Float16Array;
           case 'float32':
             return Float32Array;
         }
@@ -72,9 +71,9 @@
       function maybeConvertFilterData(float32Data) {
         switch (dataTypeOption.value) {
           case 'float16':
-            const float16Data = new Uint16Array(float32Data.length);
+            const float16Data = new Float16Array(float32Data.length);
             for (let i = 0; i < float32Data.length; ++i) {
-              float16Data[i] = toHalf(float32Data[i]);
+              float16Data[i] = float32Data[i];
             }
             return float16Data;
           case 'float32':
@@ -157,14 +156,7 @@
         const typedArray = getTypedArrayConstructor(dataTypeOption.value);
         const tensor = new typedArray(imageData.data.length);
         for (let i = 0; i < imageData.data.length; ++i) {
-          switch (dataTypeOption.value) {
-            case 'float16':
-              tensor[i] = toHalf(imageData.data[i] / 256);
-              break;
-            case 'float32':
-              tensor[i] = imageData.data[i] / 256;
-              break;
-          }
+          tensor[i] = imageData.data[i] / 256;
         }
         return tensor;
       }
@@ -172,14 +164,7 @@
       function tensorToImageData(tensor, width, height) {
         const imageData = new ImageData(width, height);
         for (let i = 0; i < tensor.length; ++i) {
-          switch (dataTypeOption.value) {
-            case 'float16':
-              imageData.data[i] = fromHalf(tensor[i]) * 256;
-              break;
-            case 'float32':
-              imageData.data[i] = tensor[i] * 256;
-              break;
-          }
+          imageData.data[i] = tensor[i] * 256;
         }
         return imageData;
       }

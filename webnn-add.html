@@ -1,7 +1,6 @@
 <html>
   <head>
     <title>WebNN Simple Example</title>
-    <script src="half-floats.js"></script>
   </head>
   <body>
     <p>
@@ -71,7 +70,7 @@
       function getTypedArrayConstructor() {
         switch (dataTypeOption.value) {
           case 'float16':
-            return Uint16Array;
+            return Float16Array;
           case 'float32':
             return Float32Array;
           case 'int8':
@@ -87,20 +86,6 @@
           case 'uint64':
             return BigUint64Array;
         }
-      }
-
-      function maybeEncodeInput(input) {
-        if (dataTypeOption.value == 'float16') {
-          return toHalf(input);
-        }
-        return input;
-      }
-
-      function maybeDecodeOutput(output) {
-        if (dataTypeOption.value == 'float16') {
-          return fromHalf(output);
-        }
-        return output;
       }
 
       async function contextOptionsChanged() {
@@ -181,15 +166,15 @@
           outputSpan.textContent = 'Compute running...';
           cOutput.textContent = '?';
 
-          buffer[0] = maybeEncodeInput(aInput.value);
-          buffer[1] = maybeEncodeInput(bInput.value);
+          buffer[0] = aInput.value;
+          buffer[1] = bInput.value;
 
           context.writeTensor(inputTensors.a, buffer.subarray(0, 1));
           context.writeTensor(inputTensors.b, buffer.subarray(1, 2));
           context.dispatch(graph, inputTensors, outputTensors);
           await context.readTensor(outputTensors.c, buffer.subarray(2, 3));
 
-          cOutput.textContent = maybeDecodeOutput(buffer[2]);
+          cOutput.textContent = buffer[2];
           outputSpan.textContent = 'Compute finished!';
         } catch (e) {
           outputSpan.textContent = `${e.name}: ${e.message}`;
