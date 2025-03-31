@@ -14,6 +14,7 @@
     <p>
       <label for="dataType">Data type:</label>
       <select id="dataType" disabled>
+        <option value="uint8">uint8</option>
         <option value="float16">float16</option>
         <option selected value="float32">float32</option>
       </select>
@@ -65,6 +66,8 @@
             return Float16Array;
           case 'float32':
             return Float32Array;
+          case 'uint8':
+            return Uint8Array;
         }
       }
 
@@ -101,16 +104,44 @@
 
         // A simple blur filter is easy because the layout doesn't matter, the
         // elements simply have to sum to 1.
-        let filterData = new Float32Array(filterHeight * filterWidth * channels);
-        filterData.fill(1 / (filterHeight * filterWidth));
-        filterData = maybeConvertFilterData(filterData);
-        const filter = builder.constant(
+        let filterData;
+        if (dataTypeOption.value == "uint8"){
+          filterData = new Uint8Array(filterHeight * filterWidth * channels);
+          filterData.fill(1);
+        } else {
+          filterData = new Float32Array(filterHeight * filterWidth * channels);
+          filterData.fill(1 / (filterHeight * filterWidth));
+          filterData = maybeConvertFilterData(filterData);
+        }
+        let filter = builder.constant(
             {dataType: dataTypeOption.value, shape: filterShape}, filterData);
 
-        let output = builder.conv2d(input, filter, {
+        
+        let output;
+        if (dataTypeOption.value == "uint8"){
+        const zeroPoint = builder.constant({dataType: "uint8", shape: []}, new Uint8Array([0]));
+        const scale = builder.constant({dataType: "float32", shape: []}, new Float32Array([1/256]));
+        const filterScale = builder.constant({dataType: "float32", shape: []}, new Float32Array([1/(filterWidth*filterHeight)]));
+        const biasScale = builder.constant({dataType: "float32", shape: []}, new Float32Array([1/(filterWidth*filterHeight*256)]));
+          const biasZeroPoint = builder.constant({dataType: "int32", shape: []}, new Int32Array(1, 0));
+          input = builder.dequantizeLinear(input, scale, zeroPoint);
+          filter = builder.dequantizeLinear(filter, filterScale, zeroPoint);
+          let bias = builder.constant({dataType: "int32", shape: [4]}, new Int32Array([0,0,0,0]));
+          bias = builder.dequantizeLinear(bias, biasScale, biasZeroPoint);
+          output = builder.conv2d(input, filter, {
+            inputLayout, filterLayout,
+            bias: bias,
+            groups: channels,  // Convolve each input channel with its own filter.
+          });
+          output = builder.quantizeLinear(output,scale, zeroPoint);
+        } else {
+          output = builder.conv2d(input, filter, {
             inputLayout, filterLayout,
             groups: channels,  // Convolve each input channel with its own filter.
-        });
+          });
+        }
+        if (dataTypeOption.value == "uint8"){
+        }
         if (inputLayout == 'nchw') {
           output = builder.transpose(output, {permutation: [0, 2, 3, 1]})
         }
@@ -154,6 +185,9 @@
 
       function imageDataToTensor(imageData) {
         const typedArray = getTypedArrayConstructor(dataTypeOption.value);
+        if (dataTypeOption.value == 'uint8'){
+          return new typedArray(imageData.data);
+        }
         const tensor = new typedArray(imageData.data.length);
         for (let i = 0; i < imageData.data.length; ++i) {
           tensor[i] = imageData.data[i] / 256;
@@ -164,7 +198,11 @@
       function tensorToImageData(tensor, width, height) {
         const imageData = new ImageData(width, height);
         for (let i = 0; i < tensor.length; ++i) {
-          imageData.data[i] = tensor[i] * 256;
+          if (dataTypeOption.value == 'uint8'){
+            imageData.data[i] = tensor[i];
+          } else {
+            imageData.data[i] = tensor[i] * 256;
+          }
         }
         return imageData;
       }
@@ -185,7 +223,6 @@
 
           context.dispatch(graph, {input: inputBuffer}, {output: outputBuffer});
           await context.readTensor(outputBuffer, tensorData);
-
           performance.mark('compute-end');
 
           const outputData = tensorToImageData(tensorData, outputDescriptor.shape[1], outputDescriptor.shape[2]);
