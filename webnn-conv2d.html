@@ -14,7 +14,7 @@
     <p>
       <label for="dataType">Data type:</label>
       <select id="dataType" disabled>
-        <option value="uint8">uint8</option>
+        <option id="uint8" value="uint8">uint8</option>
         <option value="float16">float16</option>
         <option selected value="float32">float32</option>
       </select>
@@ -59,6 +59,21 @@
       let inputBuffer;
       let outputBuffer;
       let outputDescriptor;
+
+      window.onload = function() {
+        checkUint8Support();
+      };
+
+      async function checkUint8Support() {
+        context = await navigator.ml.createContext({deviceType: deviceTypeElement.value});
+        const element = document.getElementById("uint8");
+        if (!context.opSupportLimits().input.dataTypes.includes("uint8")){
+            console.log("uint8 is not supported for current context, disabling this option.")
+            element.disabled = true;
+        } else {
+          element.disabled = false;
+        }
+      }
 
       function getTypedArrayConstructor() {
         switch (dataTypeOption.value) {
@@ -119,14 +134,14 @@
         
         let output;
         if (dataTypeOption.value == "uint8"){
-        const zeroPoint = builder.constant({dataType: "uint8", shape: []}, new Uint8Array([0]));
-        const scale = builder.constant({dataType: "float32", shape: []}, new Float32Array([1/256]));
-        const filterScale = builder.constant({dataType: "float32", shape: []}, new Float32Array([1/(filterWidth*filterHeight)]));
-        const biasScale = builder.constant({dataType: "float32", shape: []}, new Float32Array([1/(filterWidth*filterHeight*256)]));
-          const biasZeroPoint = builder.constant({dataType: "int32", shape: []}, new Int32Array(1, 0));
+          const zeroPoint = builder.constant({dataType: "uint8", shape: []}, new Uint8Array([0]));
+          const scale = builder.constant({dataType: "float32", shape: []}, new Float32Array([1/256]));
+          const filterScale = builder.constant({dataType: "float32", shape: []}, new Float32Array([1/(filterWidth*filterHeight)]));
+          const biasScale = builder.constant({dataType: "float32", shape: []}, new Float32Array([1/(filterWidth*filterHeight*256)]));
+          const biasZeroPoint = builder.constant({ dataType: "int32", shape: [] }, new Int32Array([0]));
           input = builder.dequantizeLinear(input, scale, zeroPoint);
           filter = builder.dequantizeLinear(filter, filterScale, zeroPoint);
-          let bias = builder.constant({dataType: "int32", shape: [4]}, new Int32Array([0,0,0,0]));
+          let bias = builder.constant({dataType: "int32", shape: [channels]}, new Int32Array([0,0,0,0]));
           bias = builder.dequantizeLinear(bias, biasScale, biasZeroPoint);
           output = builder.conv2d(input, filter, {
             inputLayout, filterLayout,
@@ -139,8 +154,6 @@
             inputLayout, filterLayout,
             groups: channels,  // Convolve each input channel with its own filter.
           });
-        }
-        if (dataTypeOption.value == "uint8"){
         }
         if (inputLayout == 'nchw') {
           output = builder.transpose(output, {permutation: [0, 2, 3, 1]})
@@ -302,6 +315,7 @@
 
         context?.destroy();
         context = null;
+        checkUint8Support();
 
         graphOptionsChanged();
       }
