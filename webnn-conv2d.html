@@ -120,32 +120,44 @@
         // A simple blur filter is easy because the layout doesn't matter, the
         // elements simply have to sum to 1.
         let filterData;
-        if (dataTypeOption.value == "uint8"){
+        if (dataTypeOption.value == "uint8") {
           filterData = new Uint8Array(filterHeight * filterWidth * channels);
           filterData.fill(1);
         } else {
-          filterData = new Float32Array(filterHeight * filterWidth * channels);
+          const typedArray = getTypedArrayConstructor();
+          filterData = new typedArray(filterHeight * filterWidth * channels);
           filterData.fill(1 / (filterHeight * filterWidth));
-          filterData = maybeConvertFilterData(filterData);
         }
         let filter = builder.constant(
             {dataType: dataTypeOption.value, shape: filterShape}, filterData);
 
-        
         let output;
-        if (dataTypeOption.value == "uint8"){
-          const zeroPoint = builder.constant({dataType: "uint8", shape: []}, new Uint8Array([0]));
-          const scale = builder.constant({dataType: "float32", shape: []}, new Float32Array([1/256]));
-          const filterScale = builder.constant({dataType: "float32", shape: []}, new Float32Array([1/(filterWidth*filterHeight)]));
-          const biasScale = builder.constant({dataType: "float32", shape: []}, new Float32Array([1/(filterWidth*filterHeight*256)]));
-          const biasZeroPoint = builder.constant({ dataType: "int32", shape: [] }, new Int32Array([0]));
+        if (dataTypeOption.value == "uint8") {
+          const zeroPoint =
+              builder.constant({dataType: "uint8", shape: []},
+                               new Uint8Array([0]));
+          const scale =
+              builder.constant({dataType: "float32", shape: []},
+                               new Float32Array([1 / 256]));
           input = builder.dequantizeLinear(input, scale, zeroPoint);
+
+          const filterScale =
+              builder.constant({dataType: "float32", shape: []},
+                               new Float32Array([1 / (filterWidth * filterHeight)]));
           filter = builder.dequantizeLinear(filter, filterScale, zeroPoint);
-          let bias = builder.constant({dataType: "int32", shape: [channels]}, new Int32Array([0,0,0,0]));
+
+          const biasScale =
+              builder.constant({dataType: "float32", shape: []},
+                               new Float32Array([1]));
+          const biasZeroPoint =
+              builder.constant({dataType: "int32", shape: []},
+                               new Int32Array([0]));
+          let bias = builder.constant({dataType: "int32", shape: [channels]},
+                                      new Int32Array(channels).fill(0));
           bias = builder.dequantizeLinear(bias, biasScale, biasZeroPoint);
+
           output = builder.conv2d(input, filter, {
-            inputLayout, filterLayout,
-            bias: bias,
+            inputLayout, filterLayout, bias,
             groups: channels,  // Convolve each input channel with its own filter.
           });
           output = builder.quantizeLinear(output,scale, zeroPoint);
@@ -179,15 +191,54 @@
               [channels, channels, 1, 1] : [channels, 1, 1, channels]
 
         // Mix the RGB channels but not the alpha channel.
-        const filterData = maybeConvertFilterData(Float32Array.of(
-            1/3, 1/3, 1/3, 0,
-            1/3, 1/3, 1/3, 0,
-            1/3, 1/3, 1/3, 0,
-            0, 0, 0, 1));
-        const filter = builder.constant(
+        let filterData;
+        if (dataTypeOption.value == 'uint8') {
+          filterData = Uint8Array.of(
+              1, 1, 1, 0,
+              1, 1, 1, 0,
+              1, 1, 1, 0,
+              0, 0, 0, 3);
+        } else {
+          const typedArray = getTypedArrayConstructor();
+          filterData = typedArray.of(
+              1/3, 1/3, 1/3, 0,
+              1/3, 1/3, 1/3, 0,
+              1/3, 1/3, 1/3, 0,
+              0, 0, 0, 1);
+        }
+        filter = builder.constant(
             {dataType: dataTypeOption.value, shape: filterShape}, filterData);
 
-        let output = builder.conv2d(input, filter, {inputLayout, filterLayout});
+            let output;
+        if (dataTypeOption.value == "uint8") {
+          const zeroPoint =
+              builder.constant({dataType: "uint8", shape: []},
+                               new Uint8Array([0]));
+          const scale =
+              builder.constant({dataType: "float32", shape: []},
+                               new Float32Array([1 / 256]));
+          input = builder.dequantizeLinear(input, scale, zeroPoint);
+
+          const filterScale =
+              builder.constant({dataType: "float32", shape: []},
+                               new Float32Array([1 / 3]));
+          filter = builder.dequantizeLinear(filter, filterScale, zeroPoint);
+
+          const biasScale =
+              builder.constant({dataType: "float32", shape: []},
+                               new Float32Array([1]));
+          const biasZeroPoint =
+              builder.constant({dataType: "int32", shape: []},
+                               new Int32Array([0]));
+          let bias = builder.constant({dataType: "int32", shape: [channels]},
+                                      new Int32Array(channels).fill(0));
+          bias = builder.dequantizeLinear(bias, biasScale, biasZeroPoint);
+
+          output = builder.conv2d(input, filter, {inputLayout, filterLayout, bias});
+          output = builder.quantizeLinear(output,scale, zeroPoint);
+        } else {
+          output = builder.conv2d(input, filter, {inputLayout, filterLayout});
+        }
         if (inputLayout == 'nchw') {
           output = builder.transpose(output, {permutation: [0, 2, 3, 1]})
         }
@@ -210,10 +261,10 @@
 
       function tensorToImageData(tensor, width, height) {
         const imageData = new ImageData(width, height);
-        for (let i = 0; i < tensor.length; ++i) {
-          if (dataTypeOption.value == 'uint8'){
-            imageData.data[i] = tensor[i];
-          } else {
+        if (dataTypeOption.value == 'uint8') {
+          imageData.data.set(tensor.slice(0, width * height * channels));
+        } else {
+          for (let i = 0; i < tensor.length; ++i) {
             imageData.data[i] = tensor[i] * 256;
           }
         }
