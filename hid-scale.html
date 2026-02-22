@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HID Scale Demo</title>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f2f5;
+        }
+        #container {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+            width: 350px;
+        }
+        #weight-display {
+            font-size: 4rem;
+            font-weight: bold;
+            margin: 1rem 0;
+            color: #1a73e8;
+        }
+        #unit-display {
+            font-size: 1.5rem;
+            color: #5f6368;
+        }
+        #status-display {
+            margin-top: 1rem;
+            font-style: italic;
+            color: #70757a;
+            height: 1.2em;
+        }
+        .controls {
+            margin-top: 2rem;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 1rem;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        #connect {
+            background-color: #1a73e8;
+            color: white;
+        }
+        #connect:hover {
+            background-color: #1765cc;
+        }
+        #tare {
+            background-color: #dadce0;
+            color: #3c4043;
+        }
+        #tare:hover:not(:disabled) {
+            background-color: #bdc1c6;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        #log {
+            margin-top: 2rem;
+            font-size: 0.8rem;
+            color: #9aa0a6;
+            max-height: 100px;
+            overflow-y: auto;
+            text-align: left;
+            width: 100%;
+            border-top: 1px solid #eee;
+            padding-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <h1>HID Scale</h1>
+    <div id="weight-display">0.00</div>
+    <div id="unit-display">--</div>
+    <div id="status-display">Disconnected</div>
+
+    <div class="controls">
+        <button id="connect">Connect Scale</button>
+        <button id="tare" disabled>Tare</button>
+    </div>
+
+    <div id="log"></div>
+</div>
+
+<script>
+    const connectButton = document.getElementById('connect');
+    const tareButton = document.getElementById('tare');
+    const weightDisplay = document.getElementById('weight-display');
+    const unitDisplay = document.getElementById('unit-display');
+    const statusDisplay = document.getElementById('status-display');
+    const logContainer = document.getElementById('log');
+
+    let device = null;
+
+    // Mapping from HID Scales Page (0x8D)
+    const UNIT_MAP = {
+        1: 'mg',
+        2: 'g',
+        3: 'kg',
+        4: 'carats',
+        5: 'taels',
+        6: 'grains',
+        7: 'pennyweights',
+        8: 'metric ton',
+        9: 'avoir ton',
+        10: 'troy oz',
+        11: 'oz',
+        12: 'lb'
+    };
+
+    const STATUS_MAP = {
+        1: 'Fault',
+        2: 'Stable at Zero',
+        3: 'In Motion',
+        4: 'Stable',
+        5: 'Under Zero',
+        6: 'Over Weight',
+        7: 'Requires Calibration',
+        8: 'Requires Rezeroing'
+    };
+
+    function log(message) {
+        const entry = document.createElement('div');
+        entry.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+        logContainer.prepend(entry);
+        console.log(message);
+    }
+
+    async function connectToDevice(d) {
+        if (device) return;
+        
+        try {
+            device = d;
+            await device.open();
+            log(`Connected to: ${device.productName}`);
+            
+            statusDisplay.textContent = 'Connected';
+            connectButton.textContent = 'Disconnect';
+            tareButton.disabled = false;
+
+            device.addEventListener('inputreport', handleInputReport);
+        } catch (error) {
+            log(`Error connecting to device: ${error.message}`);
+            device = null;
+        }
+    }
+
+    async function connect() {
+        try {
+            const devices = await navigator.hid.requestDevice({
+                filters: [{ usagePage: 0x8D, usage: 0x20 }]
+            });
+
+            if (devices.length > 0) {
+                await connectToDevice(devices[0]);
+            }
+        } catch (error) {
+            log(`Request error: ${error.message}`);
+        }
+    }
+
+    function disconnect() {
+        if (device) {
+            device.close();
+            device = null;
+            statusDisplay.textContent = 'Disconnected';
+            weightDisplay.textContent = '0.00';
+            unitDisplay.textContent = '--';
+            connectButton.textContent = 'Connect Scale';
+            tareButton.disabled = true;
+            log('Disconnected');
+        }
+    }
+
+    // Auto-connect to already authorized devices
+    async function autoConnect() {
+        const devices = await navigator.hid.getDevices();
+        const scale = devices.find(d => 
+            d.collections.some(c => c.usagePage === 0x8D && c.usage === 0x20)
+        );
+        
+        if (scale) {
+            log('Found existing scale, connecting...');
+            await connectToDevice(scale);
+        }
+    }
+
+    autoConnect();
+
+    function handleInputReport(event) {
+        const { data, reportId } = event;
+        // Standard HID Scale report often follows this pattern:
+        // Byte 0: Status (Usage 0x70 series)
+        // Byte 1: Unit (Usage 0x50 series)
+        // Byte 2: Scaling (Usage 0x41) - Signed 8-bit
+        // Bytes 3-4: Weight (Usage 0x40) - Unsigned 16-bit
+        
+        // Note: Actual mapping may vary by device. We use standard heuristics 
+        // derived from the Scales Page specification.
+        
+        if (data.byteLength < 3) return;
+
+        const statusByte = data.getUint8(0);
+        const unitByte = data.getUint8(1);
+        const scalingByte = data.getInt8(2); // Signed exponent
+        
+        let weight = 0;
+        if (data.byteLength >= 5) {
+            weight = data.getUint16(3, true); // Little endian
+        } else if (data.byteLength >= 4) {
+            weight = data.getUint8(3);
+        }
+
+        // Apply scaling (base 10 exponent)
+        const actualWeight = weight * Math.pow(10, scalingByte);
+        
+        weightDisplay.textContent = actualWeight.toFixed(Math.abs(scalingByte) || 2);
+        unitDisplay.textContent = UNIT_MAP[unitByte] || `Unit ${unitByte}`;
+        statusDisplay.textContent = STATUS_MAP[statusByte] || `Status ${statusByte}`;
+    }
+
+    async function tare() {
+        if (!device) return;
+        
+        log('Searching for Zero Scale (Tare) control...');
+        
+        let found = false;
+        
+        // Iterate through collections to find the Zero Scale usage (0x8D, 0x80)
+        for (const collection of device.collections) {
+            // We look for Output or Feature reports that contain the Zero Scale usage
+            const reports = [...(collection.outputReports || []), ...(collection.featureReports || [])];
+            
+            for (const report of reports) {
+                // Combined 32-bit usage: (usagePage << 16) | usage
+                const ZERO_SCALE_USAGE = (0x8D << 16) | 0x80;
+                const hasZeroScale = report.items.some(item => 
+                    item.usages && item.usages.includes(ZERO_SCALE_USAGE)
+                );
+
+                if (hasZeroScale) {
+                    try {
+                        log(`Found Zero Scale in report ID 0x${report.reportId.toString(16)}. Sending...`);
+                        
+                        // Create a buffer for the report. 
+                        // We need to set the bit/field corresponding to Zero Scale.
+                        // For a simple OOC (On/Off Control), we usually send a 1.
+                        const data = new Uint8Array(1); 
+                        data[0] = 0x01; 
+
+                        if (collection.outputReports && collection.outputReports.includes(report)) {
+                            await device.sendReport(report.reportId, data);
+                        } else {
+                            await device.sendFeatureReport(report.reportId, data);
+                        }
+                        
+                        log('Tare command sent successfully.');
+                        found = true;
+                        break;
+                    } catch (error) {
+                        log(`Failed to send tare to report 0x${report.reportId.toString(16)}: ${error.message}`);
+                    }
+                }
+            }
+            if (found) break;
+        }
+
+        if (!found) {
+            log('Zero Scale (0x80) usage not found in device descriptors.');
+            // Fallback to common hardcoded guess if discovery fails
+            try {
+                log('Attempting fallback Tare (ID 0x03)...');
+                await device.sendReport(0x03, new Uint8Array([0x01]));
+                log('Fallback Tare sent.');
+            } catch (e) {
+                log('Fallback failed.');
+            }
+        }
+    }
+
+    connectButton.addEventListener('click', () => {
+        if (device) {
+            disconnect();
+        } else {
+            connect();
+        }
+    });
+
+    tareButton.addEventListener('click', tare);
+
+    navigator.hid.addEventListener('connect', (event) => {
+        if (!device) {
+            const matches = event.device.collections.some(c => c.usagePage === 0x8D && c.usage === 0x20);
+            if (matches) {
+                log('Device connected, auto-opening...');
+                connectToDevice(event.device);
+            }
+        }
+    });
+
+    navigator.hid.addEventListener('disconnect', (event) => {
+        if (event.device === device) {
+            disconnect();
+        }
+    });
+
+</script>
+</body>
+</html>
