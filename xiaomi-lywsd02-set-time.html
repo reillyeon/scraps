@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en-US">
 <head>
-    <title>Xiaomi LYWSD02 Set Time</title>
+    <title>Configure Xiaomi LYWSD02</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="initial-scale=2">
     <style>
@@ -14,16 +14,16 @@
 <body>
 
     <div class="control-group">
-        <label>Time Format:</label>
+        <label>Temperature Units</label>
         <label>
-            <input type="radio" name="timeFormat" value="24" checked> 24-Hour
+            <input type="radio" name="tempUnit" value="C" checked> Celsius (°C)
         </label>
         <label>
-            <input type="radio" name="timeFormat" value="12"> 12-Hour
+            <input type="radio" name="tempUnit" value="F"> Fahrenheit (°F)
         </label>
     </div>
 
-    <button id="set">Set Time</button>
+    <button id="set">Set Time & Temperature Units</button>
     <span id="status"></span>
 
     <script>
@@ -31,8 +31,9 @@
         
         document.getElementById('set').addEventListener('click', async () => {
             const SERVICE_UUID = 'ebe0ccb0-7a0a-4b0c-8a1a-6ff2997da3a6';
-            const CHARACTERISTIC_UUID = 'ebe0ccb7-7a0a-4b0c-8a1a-6ff2997da3a6';
-            
+            const TIME_CHARACTERISTIC_UUID = 'ebe0ccb7-7a0a-4b0c-8a1a-6ff2997da3a6';
+            const TEMP_UNIT_CHARACTERISTIC_UUID = 'ebe0ccbe-7a0a-4b0c-8a1a-6ff2997da3a6';
+
             const options = {
                 filters: [
                     {name: 'LYWSD02'},
@@ -51,9 +52,9 @@
                 status.textContent = 'Getting service...';
                 const service = await server.getPrimaryService(SERVICE_UUID);
                 
-                status.textContent = 'Getting characteristic...';
-                const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-                
+                status.textContent = 'Getting time characteristic...';
+                const time_characteristic = await service.getCharacteristic(TIME_CHARACTERISTIC_UUID);
+
                 const buffer = new ArrayBuffer(5);
                 const view = new DataView(buffer);
                 const now = new Date();
@@ -63,20 +64,24 @@
                 
                 // Base 5th byte value: Offset from UTC (in hours)
                 let tzOffset = -now.getTimezoneOffset() / 60;
-                
-                // Get desired 12/24 hour display mode
-                const selectedFormat = document.querySelector('input[name="timeFormat"]:checked').value;
-                
-                // If 12-Hour format is selected, turn Bit 7 on
-                if (selectedFormat === '12') {
-                    tzOffset |= 0x80; 
-                }
-                
-                // Write the complete 5th byte config flag
                 view.setUint8(4, tzOffset);
                 
-                status.textContent = 'Setting time and format...';
-                await characteristic.writeValue(buffer);
+                status.textContent = 'Setting time...';
+                await time_characteristic.writeValueWithoutResponse(buffer);
+
+                // Get desired temperature units mode
+                let tempunit = 0;
+                const selectedUnit = document.querySelector('input[name="tempUnit"]:checked').value;
+                if (selectedUnit === 'F') {
+                    tempunit = 0x1; 
+                }
+
+                status.textContent = 'Getting temp unit characteristic...';
+                const temp_unit_characteristic = await service.getCharacteristic(TEMP_UNIT_CHARACTERISTIC_UUID);
+            
+                status.textContent = 'Setting temperature units...';
+                const tempbyte = new Uint8Array([tempunit]); 
+                await temp_unit_characteristic.writeValueWithoutResponse(tempbyte);
                 
                 server.disconnect();
                 status.textContent = 'Done.';
