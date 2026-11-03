@@ -1,89 +1,55 @@
 <!DOCTYPE html>
 <html lang="en-US">
 <head>
-    <title>Xiaomi LYWSD02 Set Time</title>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="initial-scale=2">
-    <style>
-        body { font-family: sans-serif; padding: 10px; }
-        .control-group { margin-bottom: 15px; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
-        label { margin-right: 15px; font-size: 16px; cursor: pointer; }
-    </style>
+<title>Xiaomi LYWSD02 Set Time</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="initial-scale=2">
 </head>
 <body>
+<button id="set">Set Time</button> <span id="status"></span>
+<script>
+const status = document.getElementById('status');
 
-    <div class="control-group">
-        <label>Time Format:</label>
-        <label>
-            <input type="radio" name="timeFormat" value="24" checked> 24-Hour
-        </label>
-        <label>
-            <input type="radio" name="timeFormat" value="12"> 12-Hour
-        </label>
-    </div>
+document.getElementById('set').addEventListener('click', async () => {
+  const SERVICE_UUID = 'ebe0ccb0-7a0a-4b0c-8a1a-6ff2997da3a6';
+  const CHARACTERISTIC_UUID = 'ebe0ccb7-7a0a-4b0c-8a1a-6ff2997da3a6';
 
-    <button id="set">Set Time</button>
-    <span id="status"></span>
+  const options = {
+    filters: [
+      {name: 'LYWSD02'},
+      {name: 'LYWSD02MMC'}
+    ],
+    optionalServices: [SERVICE_UUID],
+  };
 
-    <script>
-        const status = document.getElementById('status');
-        
-        document.getElementById('set').addEventListener('click', async () => {
-            const SERVICE_UUID = 'ebe0ccb0-7a0a-4b0c-8a1a-6ff2997da3a6';
-            const CHARACTERISTIC_UUID = 'ebe0ccb7-7a0a-4b0c-8a1a-6ff2997da3a6';
-            
-            const options = {
-                filters: [
-                    {name: 'LYWSD02'},
-                    {name: 'LYWSD02MMC'}
-                ],
-                optionalServices: [SERVICE_UUID],
-            };
+  try {
+    status.textContent = 'Requesting device...';
+    const device = await navigator.bluetooth.requestDevice(options);
+    status.textContent = 'Connecting...';
+    const server = await device.gatt.connect();
+    status.textContent = 'Getting service...';
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    status.textContent = 'Getting characteristic...';
+    const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
 
-            try {
-                status.textContent = 'Requesting device...';
-                const device = await navigator.bluetooth.requestDevice(options);
-                
-                status.textContent = 'Connecting...';
-                const server = await device.gatt.connect();
-                
-                status.textContent = 'Getting service...';
-                const service = await server.getPrimaryService(SERVICE_UUID);
-                
-                status.textContent = 'Getting characteristic...';
-                const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-                
-                const buffer = new ArrayBuffer(5);
-                const view = new DataView(buffer);
-                const now = new Date();
-                
-                // First 4 bytes: Unix timestamp (in seconds, little endian)
-                view.setUint32(0, now.getTime() / 1000, true);
-                
-                // Base 5th byte value: Offset from UTC (in hours)
-                let tzOffset = -now.getTimezoneOffset() / 60;
-                
-                // Get desired 12/24 hour display mode
-                const selectedFormat = document.querySelector('input[name="timeFormat"]:checked').value;
-                
-                // If 12-Hour format is selected, turn Bit 7 on
-                if (selectedFormat === '12') {
-                    tzOffset |= 0x80; 
-                }
-                
-                // Write the complete 5th byte config flag
-                view.setUint8(4, tzOffset);
-                
-                status.textContent = 'Setting time and format...';
-                await characteristic.writeValue(buffer);
-                
-                server.disconnect();
-                status.textContent = 'Done.';
-            } catch (e) {
-                status.textContent = `${e.name}: ${e.message}`;
-            }
-        });
-    </script>
+    const buffer = new ArrayBuffer(5);
+    const view = new DataView(buffer);
+
+    const now = new Date();
+    // First 4 bytes: Unix timestamp (in seconds, little endian)
+    view.setUint32(0, now.getTime() / 1000, true);
+    // Last byte: Offset from UTC (in hours)
+    view.setInt8(4, -now.getTimezoneOffset() / 60);
+
+    status.textContent = 'Setting time...';
+    await characteristic.writeValue(buffer);
+
+    server.disconnect(); 
+    status.textContent = 'Done.';
+  } catch (e) {
+    status.textContent = `${e.name}: ${e.message}`;
+  }
+});
+</script>
 </body>
 </html>
